@@ -62,6 +62,16 @@ final class Config {
     final String weatherUnits;
     /** How long a reading stays fresh, in minutes (15 to 720). */
     final int weatherRefreshMinutes;
+    /** Stremio shelf: whether the poster rows are wanted at all (config.xml, stremio_shelf). */
+    final boolean stremioShelf;
+    /** Download posters instead of coloured placeholders (config.xml, stremio_shelf_posters). */
+    final boolean stremioShelfPosters;
+    /** How many channel rows to show (stremio_shelf_rows, 1 to 3). */
+    final int stremioShelfRows;
+    /** Most posters per row (stremio_shelf_max_items, 1 to 20). */
+    final int stremioShelfMaxItems;
+    /** The app whose TV channels feed the shelf (stremio_shelf_package). */
+    final String stremioShelfPackage;
     /** Full-screen picture behind the launcher, or null for the plain colour. */
     final File wallpaper;
     /** Whether the overlay file was present and parsed. */
@@ -74,6 +84,8 @@ final class Config {
                    boolean showHomeSettingsShortcut, int backgroundColor,
                    int skyIntensity, boolean weatherEnabled, Double weatherLatitude, Double weatherLongitude,
                    String weatherPlace, String weatherUnits, int weatherRefreshMinutes,
+                   boolean stremioShelf, boolean stremioShelfPosters, int stremioShelfRows,
+                   int stremioShelfMaxItems, String stremioShelfPackage,
                    File wallpaper, boolean overlayApplied) {
         this.dockApps = Collections.unmodifiableList(dockApps);
         this.hiddenApps = Collections.unmodifiableList(hiddenApps);
@@ -97,6 +109,11 @@ final class Config {
         this.weatherPlace = weatherPlace;
         this.weatherUnits = weatherUnits;
         this.weatherRefreshMinutes = weatherRefreshMinutes;
+        this.stremioShelf = stremioShelf;
+        this.stremioShelfPosters = stremioShelfPosters;
+        this.stremioShelfRows = stremioShelfRows;
+        this.stremioShelfMaxItems = stremioShelfMaxItems;
+        this.stremioShelfPackage = stremioShelfPackage;
         this.wallpaper = wallpaper;
         this.overlayApplied = overlayApplied;
     }
@@ -130,6 +147,11 @@ final class Config {
         String weatherPlace = res.getString(R.string.weather_place).trim();
         String weatherUnits = Weather.units(res.getString(R.string.weather_units));
         int weatherRefresh = Math.max(15, res.getInteger(R.integer.weather_refresh_minutes));
+        boolean shelf = res.getBoolean(R.bool.stremio_shelf);
+        boolean shelfPosters = res.getBoolean(R.bool.stremio_shelf_posters);
+        int shelfRows = res.getInteger(R.integer.stremio_shelf_rows);
+        int shelfItems = res.getInteger(R.integer.stremio_shelf_max_items);
+        String shelfPackage = res.getString(R.string.stremio_shelf_package).trim();
         boolean applied = false;
 
         File dir = dir(ctx);
@@ -159,6 +181,11 @@ final class Config {
             weatherPlace = string(json, "weather_place", weatherPlace);
             weatherUnits = Weather.units(string(json, "weather_units", weatherUnits));
             weatherRefresh = integer(json, "weather_refresh_minutes", weatherRefresh, 15, 720);
+            shelf = bool(json, "stremio_shelf", shelf);
+            shelfPosters = bool(json, "stremio_shelf_posters", shelfPosters);
+            shelfRows = integer(json, "stremio_shelf_rows", shelfRows, 1, 3);
+            shelfItems = integer(json, "stremio_shelf_max_items", shelfItems, 1, 20);
+            shelfPackage = string(json, "stremio_shelf_package", shelfPackage);
         }
         // A coordinate outside its range is ignored, keeping the weather line hidden rather than wrong.
         if (weatherLat != null && !Weather.validLatitude(weatherLat)) weatherLat = null;
@@ -167,12 +194,16 @@ final class Config {
         if (wallpaper != null && !(wallpaper.isFile() && wallpaper.length() > 0)) wallpaper = null;
         // A theme can also switch the wallpaper off while the file is still there.
         if (json != null && json.has("wallpaper") && !bool(json, "wallpaper", true)) wallpaper = null;
+        // An empty package would silently disable the shelf; fall back to Stremio's.
+        if (shelfPackage.isEmpty()) shelfPackage = TvShelf.DEFAULT_PACKAGE;
 
         return new Config(dock, hidden, liveTv, liveTvAction, panelService, panelAction, inputAction,
                 Math.max(1, columns), Math.max(0, rowsBelow), shamsi, moduleCards, reducedMotion,
                 vpn, homeSettings, background,
                 Math.max(0, Math.min(100, skyIntensity)), weatherEnabled, weatherLat, weatherLon,
-                weatherPlace, weatherUnits, weatherRefresh, wallpaper, applied);
+                weatherPlace, weatherUnits, weatherRefresh,
+                shelf, shelfPosters, Math.max(1, Math.min(3, shelfRows)), Math.max(1, Math.min(20, shelfItems)),
+                shelfPackage, wallpaper, applied);
     }
 
     /** A coordinate from config.xml: blank or unparsable means "not set". */

@@ -8,7 +8,9 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -57,6 +59,7 @@ import androidx.dynamicanimation.animation.FloatPropertyCompat;
 import androidx.dynamicanimation.animation.SpringAnimation;
 import androidx.dynamicanimation.animation.SpringForce;
 import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.io.File;
@@ -107,6 +110,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private View weatherRow;
     private ImageView weatherIcon;
     private TextView weatherText;
+    /** Stremio shelf (stremio_shelf in config.xml, docs/stremio-shelf.md): poster rows above the dock. */
+    private boolean shelfOn;
+    private String shelfPackage = TvShelf.DEFAULT_PACKAGE;
+    private int shelfRowCount = 1;
+    private int shelfMaxItems = 12;
+    private LinearLayout shelfBox;
+    private PosterLoader posters;
+    private List<TvShelf.Row> shelfData = Collections.emptyList();
+    private final List<RecyclerView> shelfRecyclers = new ArrayList<>();
+    private boolean shelfLoading;
+    /** Top of the dock row in root coordinates: the shelf sits 40dp above it, where the hero name lives. */
+    private float shelfDockTop;
+    private int shelfFocusedCol;
+    private static final int REQ_SHELF_PERMISSION = 41;
     private String vpnApp;
     private SpringAnimation springX, springY;
     private float glassTargetX, glassTargetY;
@@ -245,6 +262,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         vpnApp = cfg.vpnApp;
         moduleCards = cfg.moduleCards;
         hiddenApps = new HashSet<>(cfg.hiddenApps);
+        shelfOn = cfg.stremioShelf;
+        shelfPackage = cfg.stremioShelfPackage;
+        shelfRowCount = cfg.stremioShelfRows;
+        shelfMaxItems = cfg.stremioShelfMaxItems;
+        shelfBox = findViewById(R.id.shelfBox);
+        // The rows are built while the box is GONE, so its height is only known after the first
+        // layout: position it again on every size change instead of once with a height of zero.
+        shelfBox.addOnLayoutChangeListener((v, left, top, right, bottom, ol, ot, or, ob) -> {
+            positionShelf();
+            shelfBox.post(this::shelfFitRows);
+        });
+        if (shelfOn && cfg.stremioShelfPosters) posters = new PosterLoader(getApplicationContext());
 
         grid = findViewById(R.id.grid);
         grid.setLayoutManager(new GridLayoutManager(this, COLUMNS));
@@ -330,7 +359,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return true;
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                // Back to the dock tile Up came from, not wherever the focus finder lands.
+                // Down goes into the Stremio shelf when it is up, otherwise back to the dock tile
+                // Up came from, not wherever the focus finder lands.
+                if (shelfShown()) {
+                    focusShelfItem(0, shelfFocusedCol);
+                    return true;
+                }
                 focusTile(lastFocused % COLUMNS);
                 return true;
             }
@@ -424,6 +458,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         updateInputsButton();
         sky.update();
         updateWeather(false);
+        shelfPermissionCheck();
+        shelfRefresh();
         handler.postDelayed(minuteTick, MINUTE_MS);
     }
 
@@ -515,6 +551,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             cm.unregisterNetworkCallback(networkCallback);
             cm.unregisterNetworkCallback(vpnCallback);
         }
+        if (posters != null) posters.shutdown();
     }
 
     @Override
@@ -569,9 +606,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 if (reducedMotion) grid.scrollBy(0, dy);
                 else grid.smoothScrollBy(0, dy);
             }
-            showHero(position, scroll ? r.top - dy : r.top);
+            shelfDockTop = scroll ? r.top - dy : r.top;
+            boolean shelfHere = shelfOn && !shelfData.isEmpty() && !shelfRecyclers.isEmpty()
+                    && shelfPackage.equals(adapter.packageAt(position));
+            // With the Stremio shelf up, the band above the dock belongs to the posters, not the app name.
+            showHero(position, shelfDockTop, !shelfHere);
+            if (shelfHere) shelfShow();
+            else shelfHide();
         } else {
             hideHero();
+            shelfHide();
             // Scroll just enough so the whole glass (not only the tile) is visible.
             Rect want = new Rect(0, -(int) pad * 2, item.getWidth(), item.getHeight() + (int) pad);
             grid.requestChildRectangleOnScreen(item, want, reducedMotion);
@@ -580,11 +624,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     // ---- top shelf -------------------------------------------------------------------------------
 
-    private void showHero(int position, float dockTopInRoot) {
+    /**
+     * The band above the dock: the focused app's name and the glow in its colour, positioned in code.
+     * With {@code nameVisible} false (the Stremio shelf fills the band) only the glow shows.
+     */
+    private void showHero(int position, float dockTopInRoot, boolean nameVisible) {
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - heroName.getHeight();
         boolean changed = !label.contentEquals(heroName.getText());
+
+        if (!nameVisible) {
+            heroName.animate().cancel();
+            heroName.setAlpha(0f);
+            showAmbient(color);
+            return;
+        }
 
         if (reducedMotion) {
             // Snap the shelf instead of sliding and fading it: each of those frames repaints the
@@ -594,12 +649,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             heroName.setY(y);
             heroName.setTranslationX(0f);
             heroName.setAlpha(1f);
-            setAmbient(color);
-            if (!heroShown) {
-                ambient.setAlpha(0f);
-                ambient.animate().alpha(1f).setDuration(160).start();
-                heroShown = true;
-            }
+            showAmbient(color);
             return;
         }
 
@@ -608,9 +658,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             heroName.setY(y);
             heroName.setTranslationX(0f);
             heroName.animate().alpha(1f).setDuration(260).start();
-            setAmbient(color);
-            ambient.animate().alpha(1f).setDuration(600).start();
-            heroShown = true;
+            showAmbient(color);
         } else if (changed) {
             heroName.animate().alpha(0f).translationX(-12 * density).setDuration(120).withEndAction(() -> {
                 heroName.setText(label);
@@ -618,15 +666,31 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 heroName.setTranslationX(12 * density);
                 heroName.animate().alpha(1f).translationX(0f).setDuration(200).start();
             }).start();
-            if (color != ambientColor) {
-                ambient.animate().alpha(0.35f).setDuration(200).withEndAction(() -> {
-                    setAmbient(color);
-                    ambient.animate().alpha(1f).setDuration(500).start();
-                }).start();
-            }
+            showAmbient(color);
         } else {
             heroName.setY(y);
+            showAmbient(color);
         }
+    }
+
+    /** The glow in the focused app's colour: fades in the first time, crossfades between apps after. */
+    private void showAmbient(int color) {
+        if (!heroShown) {
+            setAmbient(color);
+            ambient.setAlpha(0f);
+            ambient.animate().alpha(1f).setDuration(reducedMotion ? 160 : 600).start();
+            heroShown = true;
+            return;
+        }
+        if (color == ambientColor) return;
+        if (reducedMotion) {
+            setAmbient(color);
+            return;
+        }
+        ambient.animate().alpha(0.35f).setDuration(200).withEndAction(() -> {
+            setAmbient(color);
+            ambient.animate().alpha(1f).setDuration(500).start();
+        }).start();
     }
 
     /**
@@ -668,6 +732,219 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         glass.animate().alpha(0f).setDuration(160).start();
     }
 
+    // ---- Stremio shelf (fork, docs/stremio-shelf.md) ---------------------------------------------
+
+    /** Asks once for the TV-listings permission, on builds that make it a runtime permission. */
+    private void shelfPermissionCheck() {
+        if (!shelfOn || TvShelf.allowed(this)) return;
+        SharedPreferences prefs = getSharedPreferences("shelf", MODE_PRIVATE);
+        if (prefs.getBoolean("permission_asked", false)) return;
+        prefs.edit().putBoolean("permission_asked", true).apply();
+        requestPermissions(new String[]{TvShelf.PERMISSION}, REQ_SHELF_PERMISSION);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQ_SHELF_PERMISSION) return;
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            shelfRefresh();
+        } else {
+            Toast.makeText(this, R.string.shelf_permission_denied, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** Re-reads the shelf app's channels off the main thread; cheap enough to run on every resume. */
+    private void shelfRefresh() {
+        if (!shelfOn || shelfLoading || !TvShelf.allowed(this)) return;
+        shelfLoading = true;
+        final Context appContext = getApplicationContext();
+        final String pkg = shelfPackage;
+        final int rows = shelfRowCount, items = shelfMaxItems;
+        Thread t = new Thread(() -> {
+            final List<TvShelf.Row> data = TvShelf.load(appContext, pkg, rows, items);
+            handler.post(() -> {
+                shelfLoading = false;
+                if (isFinishing()) return;
+                shelfData = data;
+                shelfPopulate();
+            });
+        }, "shelf-read");
+        t.setPriority(Thread.NORM_PRIORITY - 1);
+        t.start();
+    }
+
+    /** Builds one horizontal row per channel, then puts the shelf back on screen if it belongs there. */
+    private void shelfPopulate() {
+        shelfBox.removeAllViews();
+        shelfRecyclers.clear();
+        if (!shelfOn || shelfData.isEmpty()) {
+            shelfHide();
+            return;
+        }
+        int posterW = Math.round(ShelfAdapter.CARD_W_DP * density * 1.1f);
+        int posterH = Math.round(ShelfAdapter.CARD_H_DP * density * 1.1f);
+        int radius = Math.round(10 * density);
+        for (int row = 0; row < shelfData.size(); row++) {
+            final int rowIndex = row;
+            RecyclerView rv = (RecyclerView) getLayoutInflater().inflate(R.layout.shelf_row, shelfBox, false);
+            rv.setLayoutManager(new LinearLayoutManager(this, RecyclerView.HORIZONTAL, false));
+            rv.setItemAnimator(null);
+            rv.setAdapter(new ShelfAdapter(shelfData.get(row).items, posters, reducedMotion, radius,
+                    posterW, posterH, new ShelfAdapter.Listener() {
+                @Override
+                public void onItemFocused(int position) {
+                    shelfFocusedCol = position;
+                }
+
+                @Override
+                public void onItemClicked(TvShelf.Item item) {
+                    openShelfItem(item);
+                }
+
+                @Override
+                public boolean onItemKey(int position, int keyCode) {
+                    return shelfItemKey(rowIndex, position, keyCode);
+                }
+            }));
+            shelfBox.addView(rv);
+            shelfRecyclers.add(rv);
+        }
+        if (shelfOnFocusedTile()) {
+            // The focused tile is the shelf app's: hand it the band and drop the app name.
+            showHero(lastFocused, shelfDockTop, false);
+            shelfShow();
+        } else {
+            shelfHide();
+        }
+        shelfBox.post(() -> {
+            positionShelf();
+            shelfFitRows();
+        });
+    }
+
+    /** Whether the shelf belongs on screen: its tile is focused and there is something to draw. */
+    private boolean shelfOnFocusedTile() {
+        return shelfOn && grid.hasFocus() && lastFocused < COLUMNS
+                && shelfPackage.equals(adapter.packageAt(lastFocused));
+    }
+
+    private boolean shelfShown() {
+        return shelfBox.getVisibility() == View.VISIBLE;
+    }
+
+    private void shelfShow() {
+        if (shelfRecyclers.isEmpty()) return;
+        if (!shelfShown()) {
+            shelfBox.setVisibility(View.VISIBLE);
+            if (reducedMotion) {
+                shelfBox.setAlpha(1f);
+            } else {
+                shelfBox.setAlpha(0f);
+                shelfBox.animate().alpha(1f).setDuration(220).start();
+            }
+        }
+        positionShelf();
+    }
+
+    private void shelfHide() {
+        if (!shelfShown()) return;
+        shelfBox.animate().cancel();
+        shelfBox.setAlpha(1f);
+        shelfBox.setVisibility(View.GONE);
+    }
+
+    /** The shelf shares the band the hero name uses: its bottom sits 40dp above the dock row. */
+    private void positionShelf() {
+        if (!shelfShown() || shelfDockTop <= 0) return;
+        shelfBox.setY(Math.max(8 * density, shelfDockTop - 40 * density - shelfBox.getHeight()));
+    }
+
+    /**
+     * Drops trailing rows that would run into the header: the band between the header and the dock
+     * takes what it takes, and one 96×144 dp row is what fits on a 1080p TV. Extra configured rows
+     * are simply not drawn rather than covering the clock; the next populate tries again.
+     */
+    private void shelfFitRows() {
+        if (shelfDockTop <= 0 || shelfRecyclers.size() <= 1) return;
+        int rowH = shelfRecyclers.get(0).getHeight();
+        if (rowH <= 0) return;                      // not laid out yet
+        int limit = (int) (shelfDockTop - 40 * density - headerBottom() - 8 * density);
+        int fits = Math.max(1, Math.min(shelfRecyclers.size(), limit / rowH));
+        if (fits >= shelfRecyclers.size()) return;
+        while (shelfRecyclers.size() > fits) {
+            shelfRecyclers.remove(shelfRecyclers.size() - 1);
+            shelfBox.removeViewAt(shelfBox.getChildCount() - 1);
+        }
+        shelfBox.post(this::positionShelf);
+    }
+
+    /** Bottom of the header block (weather line, greeting, clock, date) in root coordinates. */
+    private float headerBottom() {
+        View left = findViewById(R.id.leftBlock);
+        if (left == null || left.getHeight() == 0) return 80 * density;
+        int[] at = new int[2];
+        left.getLocationInWindow(at);
+        return at[1] + left.getHeight();
+    }
+
+    /** Moves focus to a poster, scrolling the row so it is fully visible. */
+    private void focusShelfItem(int row, int column) {
+        if (row < 0 || row >= shelfRecyclers.size()) return;
+        RecyclerView rv = shelfRecyclers.get(row);
+        RecyclerView.Adapter<?> a = rv.getAdapter();
+        if (a == null || a.getItemCount() == 0) return;
+        final int pos = Math.max(0, Math.min(column, a.getItemCount() - 1));
+        shelfFocusedCol = pos;
+        RecyclerView.ViewHolder vh = rv.findViewHolderForAdapterPosition(pos);
+        if (vh != null) {
+            vh.itemView.requestFocus();
+            return;
+        }
+        rv.scrollToPosition(pos);
+        rv.post(() -> {
+            RecyclerView.ViewHolder holder = rv.findViewHolderForAdapterPosition(pos);
+            if (holder != null) holder.itemView.requestFocus();
+        });
+    }
+
+    /** D-pad on a poster: rows stack upwards, the ends of a row do not wrap, Down falls back to the dock. */
+    private boolean shelfItemKey(int row, int position, int keyCode) {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+            if (row > 0) focusShelfItem(row - 1, position);
+            else focusTopBar();
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+            if (row < shelfRecyclers.size() - 1) focusShelfItem(row + 1, position);
+            else focusTile(Math.max(0, lastFocused % COLUMNS));
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return position <= 0;
+        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+            RecyclerView rv = row >= 0 && row < shelfRecyclers.size() ? shelfRecyclers.get(row) : null;
+            RecyclerView.Adapter<?> a = rv == null ? null : rv.getAdapter();
+            return a != null && position >= a.getItemCount() - 1;
+        }
+        return false;
+    }
+
+    private void focusTopBar() {
+        (btnInputs.getVisibility() == View.VISIBLE ? btnInputs : btnWifi).requestFocus();
+    }
+
+    /** Follows a poster's Stremio deep link; falls back to opening the app when the link is unusable. */
+    private void openShelfItem(TvShelf.Item item) {
+        Intent i = TvShelf.launchIntent(item.intentUri, shelfPackage);
+        if (i == null) i = getPackageManager().getLeanbackLaunchIntentForPackage(shelfPackage);
+        if (i == null) i = getPackageManager().getLaunchIntentForPackage(shelfPackage);
+        if (i == null) {
+            Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        open(i);
+    }
+
     // ---- navigation ------------------------------------------------------------------------------
 
     @Override
@@ -683,7 +960,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return position % COLUMNS == COLUMNS - 1 || position == count - 1;
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
+            if (position < COLUMNS) {
+                // Dock row: into the Stremio shelf when it is up, otherwise to the top bar.
+                if (shelfShown()) {
+                    focusShelfItem(shelfRecyclers.size() - 1, shelfFocusedCol);
+                    return true;
+                }
+                return false;
+            }
             target = position - COLUMNS;
         } else {
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;

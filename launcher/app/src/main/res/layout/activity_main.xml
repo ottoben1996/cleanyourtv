@@ -19,6 +19,17 @@
         android:layout_height="match_parent"
         android:alpha="0" />
 
+    <!-- Stremio shelf (fork, docs/stremio-shelf.md): poster rows built from the Android TV channels
+         Stremio publishes, placed above the dock in code while its tile is focused. -->
+    <LinearLayout
+        android:id="@+id/shelfBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:clipChildren="false"
+        android:importantForAccessibility="no" />
+
     <!-- Top shelf: the focused dock app's name, positioned above the dock in code. -->
     <TextView
         android:id="@+id/heroName"

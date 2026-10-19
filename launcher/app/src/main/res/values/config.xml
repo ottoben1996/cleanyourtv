@@ -93,4 +93,22 @@
     <string name="weather_units" translatable="false">celsius</string>
     <!-- How long a reading stays fresh before another request is made, 15 to 720 minutes. -->
     <integer name="weather_refresh_minutes">30</integer>
+
+    <!-- Stremio shelf (fork feature, docs/stremio-shelf.md): poster rows above the dock, built from the
+         Android TV channels Stremio publishes ("Continuer de regarder", "Bibliothèque …"). Read from the
+         TV provider, no Stremio account or API; hides itself when Stremio is absent or publishes nothing.
+         TV builds that make READ_TV_LISTINGS a runtime permission ask once (Allow/Deny the first time),
+         others grant it at install. false hides the shelf for good. -->
+    <bool name="stremio_shelf">true</bool>
+    <!-- Download posters over https (Stremio's metadata CDNs) instead of showing coloured placeholders.
+         Requests only run while the shelf is on screen; images are cached (8 MB memory, 40 MB disk). -->
+    <bool name="stremio_shelf_posters">true</bool>
+    <!-- How many channel rows to show (1 = "Continuer de regarder" only), 1 to 3. Rows that would run
+         into the clock/greeting are dropped: the band above the dock takes one 96x144 dp row on a
+         1080p TV, and two on a 720p one. -->
+    <integer name="stremio_shelf_rows">1</integer>
+    <!-- Most posters per row, 1 to 20. -->
+    <integer name="stremio_shelf_max_items">12</integer>
+    <!-- The app whose channels feed the shelf. -->
+    <string name="stremio_shelf_package" translatable="false">com.stremio.one</string>
 </resources>

@@ -18,6 +18,7 @@
     <string name="offline">Hors ligne</string>
     <string name="not_available">Indisponible sur cette TV</string>
     <string name="cant_open">Impossible d\'ouvrir %1$s</string>
+    <string name="shelf_permission_denied">Rangée Stremio : permission TV refusée, la rangée reste masquée</string>
     <string name="date_format">EEEE d MMMM</string>
     <string name="dream_name">Horloge</string>
     <string name="wx_clear">Ciel dégagé</string>

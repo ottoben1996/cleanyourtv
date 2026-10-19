@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One horizontal row of the Stremio shelf; rows are stacked inside @id/shelfBox. -->
+<androidx.recyclerview.widget.RecyclerView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/shelfRow"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingStart="50dp"
+    android:paddingEnd="50dp"
+    android:clipToPadding="false"
+    android:clipChildren="false"
+    android:overScrollMode="never"
+    android:scrollbars="none" />

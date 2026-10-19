@@ -18,6 +18,7 @@
     <string name="offline">Offline</string>
     <string name="not_available">Not available on this TV</string>
     <string name="cant_open">Can\'t open %1$s</string>
+    <string name="shelf_permission_denied">Stremio shelf: TV listings permission denied, the shelf stays hidden</string>
     <string name="date_format">EEEE  d MMMM</string>
     <string name="dream_name">Clock</string>
     <string name="vpn">VPN</string>

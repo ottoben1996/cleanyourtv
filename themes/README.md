@@ -43,6 +43,11 @@ is ignored, and a file that doesn't parse is ignored as a whole, so a theme can 
 | `weather_place` | string | Name shown before the temperature ("Paris 14° · Nuageux"); empty shows only the icon and the reading |
 | `weather_units` | string | `celsius` (default) or `fahrenheit` |
 | `weather_refresh_minutes` | 15 to 720 | How long a weather reading stays fresh before another request (default 30) |
+| `stremio_shelf` | bool | Show the Stremio shelf: poster rows above the dock, read from the channels Stremio publishes to the TV (fork feature, `true` by default; see `docs/stremio-shelf.md`) |
+| `stremio_shelf_posters` | bool | Download posters (`true`, default) instead of coloured placeholders |
+| `stremio_shelf_rows` | 1 to 3 | How many channel rows to show (default 1, "Continuer de regarder" only; rows that would cover the clock are dropped — one row fits a 1080p TV, two a 720p one) |
+| `stremio_shelf_max_items` | 1 to 20 | Most posters per row (default 12) |
+| `stremio_shelf_package` | string | The app whose channels feed the shelf (default `com.stremio.one`) |
 | `wallpaper` | bool | Show `wallpaper.jpg` from the theme folder (`true`), or ignore it (`false`) |
 
 ## Wallpapers
@@ -90,6 +95,30 @@ value.
 Both features are off in the built-in configuration: the reference launcher never touches the
 network, and the sky is opt-in for anyone who wants the plain black look kept. The `sunset/` theme
 is the ready-made version of the block above.
+
+## Stremio shelf
+
+While the Stremio tile in the dock has focus, Home can show poster rows above the dock — "Continuer
+de regarder" and the library — read straight from the Android TV channels Stremio already publishes
+for the TV's own home screen. No Stremio account or API, no configuration inside Stremio: the row
+appears once the app has refreshed its channels, and stays hidden when the app is absent, the
+permission is missing or the lists are empty. It reads the provider, so on TV builds that make
+`READ_TV_LISTINGS` a runtime permission Home asks once (denying only hides the shelf).
+
+Posters are `https://` URLs; Home downloads them itself (8 MB memory cache, 40 MB disk cache) only
+while the shelf is on screen, and falls back to a coloured placeholder when a poster cannot load.
+`stremio_shelf_posters: false` keeps the placeholders and never touches the network.
+
+```json
+{
+  "stremio_shelf": true,
+  "stremio_shelf_rows": 2,
+  "stremio_shelf_max_items": 10
+}
+```
+
+This is a fork feature: upstream keeps recommendation rows out of Home. Details and troubleshooting
+are in `docs/stremio-shelf.md`.
 
 ## Adding a theme
 
