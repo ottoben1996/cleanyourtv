@@ -1,3 +1,8 @@
 {
-  "sky_intensity": 60
+  "sky_intensity": 60,
+  "weather_enabled": true,
+  "weather_latitude": 44.13806,
+  "weather_longitude": 4.81025,
+  "weather_place": "Orange",
+  "weather_units": "celsius"
 }
