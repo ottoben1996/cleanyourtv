@@ -24,7 +24,8 @@ import java.util.List;
  * unknown or badly typed key is ignored, so a theme can change the dock and the look without a rebuild:
  * {@code tools/theme.sh themes/<name>} pushes a theme folder there and restarts Home.
  *
- * Read once in {@link MainActivity#onCreate}; nothing here touches the network.
+ * Read once in {@link MainActivity#onCreate}; nothing here touches the network. The sky_* and
+ * weather_* keys are read here as well; the weather request itself lives in {@link Weather}.
  */
 final class Config {
     private static final String TAG = "TvHome.Config";
@@ -48,6 +49,19 @@ final class Config {
     final boolean showHomeSettingsShortcut;
     /** Background colour behind everything, #RRGGBB; black unless a theme says otherwise. */
     final int backgroundColor;
+    /** Sunset backdrop, 0 to 100 (config.xml, sky_intensity); 0 keeps the plain background. */
+    final int skyIntensity;
+    /** Weather line: whether it is wanted at all (config.xml, weather_enabled). */
+    final boolean weatherEnabled;
+    /** Latitude and longitude for the weather line; null unless set to a valid coordinate. */
+    final Double weatherLatitude;
+    final Double weatherLongitude;
+    /** Optional place name shown before the temperature ("Paris 14° · Nuageux"); may be empty. */
+    final String weatherPlace;
+    /** "celsius" or "fahrenheit"; anything else reads as celsius. */
+    final String weatherUnits;
+    /** How long a reading stays fresh, in minutes (15 to 720). */
+    final int weatherRefreshMinutes;
     /** Full-screen picture behind the launcher, or null for the plain colour. */
     final File wallpaper;
     /** Whether the overlay file was present and parsed. */
@@ -58,6 +72,8 @@ final class Config {
                    int columns, int rowsBelowDock,
                    boolean shamsiDate, boolean moduleCards, boolean reducedMotion, String vpnApp,
                    boolean showHomeSettingsShortcut, int backgroundColor,
+                   int skyIntensity, boolean weatherEnabled, Double weatherLatitude, Double weatherLongitude,
+                   String weatherPlace, String weatherUnits, int weatherRefreshMinutes,
                    File wallpaper, boolean overlayApplied) {
         this.dockApps = Collections.unmodifiableList(dockApps);
         this.hiddenApps = Collections.unmodifiableList(hiddenApps);
@@ -74,6 +90,13 @@ final class Config {
         this.vpnApp = vpnApp;
         this.showHomeSettingsShortcut = showHomeSettingsShortcut;
         this.backgroundColor = backgroundColor;
+        this.skyIntensity = skyIntensity;
+        this.weatherEnabled = weatherEnabled;
+        this.weatherLatitude = weatherLatitude;
+        this.weatherLongitude = weatherLongitude;
+        this.weatherPlace = weatherPlace;
+        this.weatherUnits = weatherUnits;
+        this.weatherRefreshMinutes = weatherRefreshMinutes;
         this.wallpaper = wallpaper;
         this.overlayApplied = overlayApplied;
     }
@@ -100,6 +123,13 @@ final class Config {
         String vpn = res.getString(R.string.vpn_app).trim();
         boolean homeSettings = res.getBoolean(R.bool.show_home_settings_shortcut);
         int background = 0xFF000000;
+        int skyIntensity = res.getInteger(R.integer.sky_intensity);
+        boolean weatherEnabled = res.getBoolean(R.bool.weather_enabled);
+        Double weatherLat = coordinate(res.getString(R.string.weather_latitude));
+        Double weatherLon = coordinate(res.getString(R.string.weather_longitude));
+        String weatherPlace = res.getString(R.string.weather_place).trim();
+        String weatherUnits = Weather.units(res.getString(R.string.weather_units));
+        int weatherRefresh = Math.max(15, res.getInteger(R.integer.weather_refresh_minutes));
         boolean applied = false;
 
         File dir = dir(ctx);
@@ -122,7 +152,17 @@ final class Config {
             vpn = string(json, "vpn_app", vpn);
             homeSettings = bool(json, "show_home_settings_shortcut", homeSettings);
             background = color(json, "background_color", background);
+            skyIntensity = integer(json, "sky_intensity", skyIntensity, 0, 100);
+            weatherEnabled = bool(json, "weather_enabled", weatherEnabled);
+            weatherLat = coordinate(json, "weather_latitude", weatherLat);
+            weatherLon = coordinate(json, "weather_longitude", weatherLon);
+            weatherPlace = string(json, "weather_place", weatherPlace);
+            weatherUnits = Weather.units(string(json, "weather_units", weatherUnits));
+            weatherRefresh = integer(json, "weather_refresh_minutes", weatherRefresh, 15, 720);
         }
+        // A coordinate outside its range is ignored, keeping the weather line hidden rather than wrong.
+        if (weatherLat != null && !Weather.validLatitude(weatherLat)) weatherLat = null;
+        if (weatherLon != null && !Weather.validLongitude(weatherLon)) weatherLon = null;
         File wallpaper = dir != null ? new File(dir, WALLPAPER_NAME) : null;
         if (wallpaper != null && !(wallpaper.isFile() && wallpaper.length() > 0)) wallpaper = null;
         // A theme can also switch the wallpaper off while the file is still there.
@@ -130,7 +170,34 @@ final class Config {
 
         return new Config(dock, hidden, liveTv, liveTvAction, panelService, panelAction, inputAction,
                 Math.max(1, columns), Math.max(0, rowsBelow), shamsi, moduleCards, reducedMotion,
-                vpn, homeSettings, background, wallpaper, applied);
+                vpn, homeSettings, background,
+                Math.max(0, Math.min(100, skyIntensity)), weatherEnabled, weatherLat, weatherLon,
+                weatherPlace, weatherUnits, weatherRefresh, wallpaper, applied);
+    }
+
+    /** A coordinate from config.xml: blank or unparsable means "not set". */
+    private static Double coordinate(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return null;
+        try {
+            double v = Double.parseDouble(raw.trim());
+            return Double.isNaN(v) ? null : v;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** A coordinate from a theme: a number, or a string holding one; anything else keeps the fallback. */
+    private static Double coordinate(JSONObject o, String key, Double fallback) {
+        Object v = o.opt(key);
+        if (v instanceof Number) {
+            double d = ((Number) v).doubleValue();
+            return Double.isNaN(d) ? fallback : d;
+        }
+        if (v instanceof String) {
+            Double d = coordinate((String) v);
+            return d != null ? d : fallback;
+        }
+        return fallback;
     }
 
     /** Reads and parses the overlay; any problem means "no overlay", never a crash on the home screen. */

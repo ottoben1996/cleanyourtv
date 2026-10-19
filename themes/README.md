@@ -15,6 +15,7 @@ powershell -ExecutionPolicy Bypass -File tools\theme.ps1 -TvHost 192.168.1.50 th
 | `default/` | The built-in look written out as JSON, as a starting point for your own |
 | `aurora/` | A dark aurora wallpaper (teal and violet on navy, darker at the bottom) with a matching background colour |
 | `six-columns/` | Six smaller tiles per row and one grid row visible under the dock |
+| `sunset/` | The clock-following sunset backdrop; add the `weather_*` keys to light up the weather line |
 
 ## Keys
 
@@ -36,6 +37,12 @@ is ignored, and a file that doesn't parse is ignored as a whole, so a theme can 
 | `vpn_app` | string | App the network pill opens when a VPN is configured; also shows a red "VPN off" badge while no VPN is up |
 | `show_home_settings_shortcut` | bool | The "Default home" tile, where the TV has a home picker |
 | `background_color` | `#RRGGBB` | Colour behind everything; black by default |
+| `sky_intensity` | 0 to 100 | Sunset backdrop that follows the clock, with a warm horizon glow around sunrise and sunset. 0 keeps the plain background; around 60 reads clearly, 100 covers a wallpaper |
+| `weather_enabled` | bool | Show the weather line in the top-left corner. Needs both coordinates; until then nothing is requested |
+| `weather_latitude`, `weather_longitude` | number | Coordinates of your town; `tools/weather.py <town>` prints them, `--theme themes/sunset` writes them into a theme |
+| `weather_place` | string | Name shown before the temperature ("Paris 14° · Nuageux"); empty shows only the icon and the reading |
+| `weather_units` | string | `celsius` (default) or `fahrenheit` |
+| `weather_refresh_minutes` | 15 to 720 | How long a weather reading stays fresh before another request (default 30) |
 | `wallpaper` | bool | Show `wallpaper.jpg` from the theme folder (`true`), or ignore it (`false`) |
 
 ## Wallpapers
@@ -54,6 +61,35 @@ Android 10 is the known case. The default, `false`, keeps the normal motion.
 ```json
 { "reduced_motion": true }
 ```
+
+## Sky and weather
+
+`sky_intensity` turns on a dark backdrop that follows the clock: deep night blues, a soft blue
+day, and a warm glow that travels along the horizon at sunrise and sunset. It is drawn behind the
+tiles, never animated, and redrawn once a minute, so it costs one full-screen draw a minute on any
+TV. Colours stay dark enough for the white clock, the greeting and the dock band.
+
+The weather line appears in the top-left corner as an icon plus "Paris 14° · Nuageux". It needs
+`weather_enabled` and both coordinates; `tools/weather.py <town>` prints them and, with
+`--theme themes/sunset`, writes them into that theme. A reading is fetched at most once every
+`weather_refresh_minutes` (30 by default), only while Home is in front, from open-meteo.com — no
+account, no key, and no location permission: the coordinates come from the theme. The last reading
+is cached, so the line survives a reboot and the launcher without a network still shows the last
+value.
+
+```json
+{
+  "sky_intensity": 60,
+  "weather_enabled": true,
+  "weather_latitude": 48.8566,
+  "weather_longitude": 2.3522,
+  "weather_place": "Paris"
+}
+```
+
+Both features are off in the built-in configuration: the reference launcher never touches the
+network, and the sky is opt-in for anyone who wants the plain black look kept. The `sunset/` theme
+is the ready-made version of the block above.
 
 ## Adding a theme
 

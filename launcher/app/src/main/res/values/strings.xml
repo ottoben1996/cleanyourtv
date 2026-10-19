@@ -46,4 +46,15 @@
     <string name="card_state_new">New</string>
     <string name="card_state_new_key">New key</string>
     <string name="card_state_new_label">New name</string>
+    <string name="wx_clear">Clear</string>
+    <string name="wx_partly">Partly cloudy</string>
+    <string name="wx_cloudy">Cloudy</string>
+    <string name="wx_fog">Fog</string>
+    <string name="wx_drizzle">Drizzle</string>
+    <string name="wx_rain">Rain</string>
+    <string name="wx_snow">Snow</string>
+    <string name="wx_storm">Thunderstorm</string>
+    <!-- Weather line, top-left: the place is optional (see weather_place). -->
+    <string name="wx_line">%1$s %2$d° · %3$s</string>
+    <string name="wx_line_plain">%2$d° · %3$s</string>
 </resources>

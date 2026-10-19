@@ -95,6 +95,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private TextView btnWifi;
     private TextView shamsiDate;
     private boolean shamsi;
+    /** Optional sunset backdrop (config.xml, sky_intensity). */
+    private SkyView sky;
+    /** Weather line state; off unless a theme enabled it with coordinates (config.xml, weather_*). */
+    private boolean weatherOn;
+    private double weatherLat;
+    private double weatherLon;
+    private String weatherUnits = Weather.CELSIUS;
+    private long weatherRefreshMs = 30 * 60_000L;
+    private String weatherPlace = "";
+    private View weatherRow;
+    private ImageView weatherIcon;
+    private TextView weatherText;
     private String vpnApp;
     private SpringAnimation springX, springY;
     private float glassTargetX, glassTargetY;
@@ -128,7 +140,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
         @Override
         public void onAvailable(@NonNull Network network) {
-            handler.post(MainActivity.this::updateWifiLabel);
+            handler.post(() -> {
+                updateWifiLabel();
+                updateWeather(false);
+            });
         }
 
         @Override
@@ -175,6 +190,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         public void run() {
             updateGreeting();
             updateWifiLabel();
+            sky.update();
+            updateWeather(false);
             handler.postDelayed(this, MINUTE_MS);
         }
     };
@@ -197,6 +214,21 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         root = findViewById(R.id.root);
         root.setBackgroundColor(cfg.backgroundColor);
         if (cfg.wallpaper != null) showWallpaper(cfg.wallpaper);
+        sky = findViewById(R.id.sky);
+        sky.setIntensity(cfg.skyIntensity);
+        weatherRow = findViewById(R.id.weatherRow);
+        weatherIcon = findViewById(R.id.weatherIcon);
+        weatherText = findViewById(R.id.weatherText);
+        weatherOn = cfg.weatherEnabled && cfg.weatherLatitude != null && cfg.weatherLongitude != null;
+        if (weatherOn) {
+            weatherLat = cfg.weatherLatitude;
+            weatherLon = cfg.weatherLongitude;
+            weatherUnits = cfg.weatherUnits;
+            weatherRefreshMs = cfg.weatherRefreshMinutes * 60_000L;
+            weatherPlace = cfg.weatherPlace;
+            // Reserve the corner while the first reading loads, so the header does not jump when it lands.
+            weatherRow.setVisibility(View.INVISIBLE);
+        }
         glass = findViewById(R.id.glass);
         ambient = findViewById(R.id.ambient);
         heroName = findViewById(R.id.heroName);
@@ -390,6 +422,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         updateGreeting();
         updateWifiLabel();
         updateInputsButton();
+        sky.update();
+        updateWeather(false);
         handler.postDelayed(minuteTick, MINUTE_MS);
     }
 
@@ -700,6 +734,45 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         else res = R.string.good_night;
         greeting.setText(res);
         if (shamsi) shamsiDate.setText(Shamsi.today());
+    }
+
+    // ---- weather ---------------------------------------------------------------------------------
+
+    /**
+     * Shows the cached reading at once, then asks for a fresh one once it has gone stale. Cheap
+     * and safe to call every minute: the request itself is throttled by {@link Weather}, and with
+     * no coordinates configured this does nothing at all.
+     */
+    private void updateWeather(boolean force) {
+        if (!weatherOn) return;
+        Weather.Now cached = Weather.cached(this, weatherUnits);
+        showWeather(cached);
+        long age = cached == null ? Long.MAX_VALUE : System.currentTimeMillis() - cached.fetchedAt;
+        if (force || age >= weatherRefreshMs) {
+            Weather.refresh(getApplicationContext(), weatherLat, weatherLon, weatherUnits, this::showWeather);
+        }
+    }
+
+    /** Applies one reading; without one the line keeps its reserved space, invisible. */
+    private void showWeather(Weather.Now now) {
+        if (now == null) {
+            weatherRow.setVisibility(View.INVISIBLE);
+            return;
+        }
+        weatherIcon.setImageResource(Weather.icon(now.code, now.day));
+        String condition = getString(Weather.label(now.code));
+        weatherText.setText(weatherPlace.isEmpty()
+                ? getString(R.string.wx_line_plain, now.temperature, condition)
+                : getString(R.string.wx_line, weatherPlace, now.temperature, condition));
+        if (weatherRow.getVisibility() != View.VISIBLE) {
+            weatherRow.setVisibility(View.VISIBLE);
+            if (reducedMotion) {
+                weatherRow.setAlpha(1f);
+            } else {
+                weatherRow.setAlpha(0f);
+                weatherRow.animate().alpha(1f).setDuration(400).start();
+            }
+        }
     }
 
     /** Shows the Wi-Fi network name on the button when we can read it, otherwise the connection type. */

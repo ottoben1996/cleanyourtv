@@ -5,6 +5,13 @@
     android:layout_height="match_parent"
     android:background="#FF000000">
 
+    <!-- Sunset backdrop that follows the clock (config.xml sky_intensity; 0 keeps it hidden). -->
+    <com.gathin.tvhome.SkyView
+        android:id="@+id/sky"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no" />
+
     <!-- Ambient glow in the colour of the focused dock app. -->
     <View
         android:id="@+id/ambient"
@@ -47,6 +54,39 @@
                 android:layout_toStartOf="@+id/topButtons"
                 android:layout_marginEnd="16dp"
                 android:orientation="vertical">
+
+                <!-- Weather, top-left: one icon and "Paris 14° · Nuageux". Hidden until a theme sets
+                     weather_enabled and coordinates; GONE for good when weather is not configured. -->
+                <LinearLayout
+                    android:id="@+id/weatherRow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:layout_marginBottom="6dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:id="@+id/weatherIcon"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginEnd="7dp"
+                        android:importantForAccessibility="no"
+                        android:tint="#CCFFFFFF" />
+
+                    <TextView
+                        android:id="@+id/weatherText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/outfit"
+                        android:fontVariationSettings="'wght' 400"
+                        android:includeFontPadding="false"
+                        android:letterSpacing="0.06"
+                        android:singleLine="true"
+                        android:textColor="#B3FFFFFF"
+                        android:textSize="12sp" />
+                </LinearLayout>
 
                 <!-- The header texts use gravity left, not start: the launcher lays out left to right
                      (no supportsRtl), and with start a right-to-left script such as Arabic would move to the

@@ -20,4 +20,14 @@
     <string name="cant_open">Impossible d\'ouvrir %1$s</string>
     <string name="date_format">EEEE d MMMM</string>
     <string name="dream_name">Horloge</string>
+    <string name="wx_clear">Ciel dégagé</string>
+    <string name="wx_partly">Éclaircies</string>
+    <string name="wx_cloudy">Nuageux</string>
+    <string name="wx_fog">Brouillard</string>
+    <string name="wx_drizzle">Bruine</string>
+    <string name="wx_rain">Pluie</string>
+    <string name="wx_snow">Neige</string>
+    <string name="wx_storm">Orage</string>
+    <string name="wx_line">%1$s %2$d° · %3$s</string>
+    <string name="wx_line_plain">%2$d° · %3$s</string>
 </resources>
