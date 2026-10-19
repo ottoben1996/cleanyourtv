@@ -15,7 +15,7 @@ powershell -ExecutionPolicy Bypass -File tools\theme.ps1 -TvHost 192.168.1.50 th
 | `default/` | The built-in look written out as JSON, as a starting point for your own |
 | `aurora/` | A dark aurora wallpaper (teal and violet on navy, darker at the bottom) with a matching background colour |
 | `six-columns/` | Six smaller tiles per row and one grid row visible under the dock |
-| `sunset/` | The clock-following sunset backdrop; add the `weather_*` keys to light up the weather line |
+| `sunset/` | The clock-following sunset backdrop and the weather line, tailored to the Strong LEAP-S1 (dock: GoldenOTT, Stremio, TizenTube, Spotify) |
 
 ## Keys
 

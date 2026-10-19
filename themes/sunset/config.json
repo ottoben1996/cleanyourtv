@@ -1,4 +1,10 @@
 {
+  "dock_apps": [
+    "com.new_Golden_ott_user.app",
+    "com.stremio.one",
+    "io.gh.reisxd.tizentube.cobalt",
+    "com.spotify.tv.android"
+  ],
   "sky_intensity": 60,
   "weather_enabled": true,
   "weather_latitude": 44.13806,
