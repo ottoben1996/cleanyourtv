@@ -70,6 +70,19 @@
             android:taskAffinity=""
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.NoDisplay" />
+        <!-- Now playing (now_playing in config.xml, docs/now-playing.md): an enabled notification
+             listener is what lets the launcher read other apps' media sessions on Android 5+. It reads
+             no notification; only the media title, artist and artwork are used. Grant it once in
+             Settings > Apps > Special app access > Notification access. -->
+        <service
+            android:name=".PlaybackListener"
+            android:label="@string/app_name"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
         <!-- Home button for remotes that send KEYCODE_ALL_APPS (Xiaomi). Opt-in: HOME_KEY_SERVICE=1
              build-and-install.sh; see HomeKeyService. -->
         <service

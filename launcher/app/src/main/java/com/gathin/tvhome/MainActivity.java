@@ -51,6 +51,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -96,6 +97,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private TextView heroName;
     private int ambientColor = -1;
     private boolean heroShown;
+    /** Now playing (now_playing in config.xml, docs/now-playing.md): the track and its glow. */
+    private boolean nowPlayingOn;
+    private NowPlaying nowPlaying;
+    private LinearLayout nowPlayingBox;
+    private ImageView nowPlayingArt;
+    private TextView nowPlayingNote;
+    private TextView nowPlayingTitle;
+    private TextView nowPlayingArtist;
+    private ProgressBar nowPlayingProgress;
+    private boolean nowPlayingShown;
+    private String nowPlayingKey = "";
     private TextView greeting;
     private View btnInputs;
     private TextView btnWifi;
@@ -269,6 +281,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         glass = findViewById(R.id.glass);
         ambient = findViewById(R.id.ambient);
         heroName = findViewById(R.id.heroName);
+        nowPlayingOn = cfg.nowPlaying;
+        nowPlayingBox = findViewById(R.id.nowPlaying);
+        nowPlayingArt = findViewById(R.id.npArt);
+        nowPlayingNote = findViewById(R.id.npArtNote);
+        nowPlayingTitle = findViewById(R.id.npTitle);
+        nowPlayingArtist = findViewById(R.id.npArtist);
+        nowPlayingProgress = findViewById(R.id.npProgress);
+        nowPlaying = new NowPlaying(this, this::onNowPlayingChanged);
         greeting = findViewById(R.id.greeting);
         btnWifi = findViewById(R.id.btnWifi);
         shamsiDate = findViewById(R.id.shamsiDate);
@@ -481,6 +501,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         updateWeather(false);
         shelfPermissionCheck();
         shelfRefresh();
+        nowPlayingPermissionCheck();
+        if (nowPlayingOn) nowPlaying.start();
         handler.postDelayed(minuteTick, MINUTE_MS);
     }
 
@@ -554,6 +576,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Nothing of ours stays on screen over another app; an undecided prompt simply returns next time.
         if (cardPrompt != null) cardPrompt.dismiss();
         if (openPopup != null) openPopup.dismiss();
+        nowPlaying.stop();
+        stopNowPlayingTick();
     }
 
     @Override
@@ -573,6 +597,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             cm.unregisterNetworkCallback(vpnCallback);
         }
         if (posters != null) posters.shutdown();
+        if (nowPlaying != null) nowPlaying.stop();
     }
 
     @Override
@@ -628,15 +653,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 else grid.smoothScrollBy(0, dy);
             }
             shelfDockTop = scroll ? r.top - dy : r.top;
-            String tilePackage = adapter.packageAt(position);
-            boolean shelfHere = shelfOn && hasShelf(tilePackage);
-            // With a shelf up, the band above the dock belongs to its cards, not the app name.
-            showHero(position, shelfDockTop, !shelfHere);
-            if (shelfHere) shelfActivate(tilePackage);
-            else shelfHide();
+            showDockBand(position);
         } else {
             hideHero();
             shelfHide();
+            showNowPlaying(false);
             // Scroll just enough so the whole glass (not only the tile) is visible.
             Rect want = new Rect(0, -(int) pad * 2, item.getWidth(), item.getHeight() + (int) pad);
             grid.requestChildRectangleOnScreen(item, want, reducedMotion);
@@ -651,7 +672,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     private void showHero(int position, float dockTopInRoot, boolean nameVisible) {
         String label = adapter.labelAt(position);
-        int color = adapter.ambientColorAt(position);
+        int color = heroColor(position);
         float y = dockTopInRoot - 14 * density - 26 * density - heroName.getHeight();
         boolean changed = !label.contentEquals(heroName.getText());
 
@@ -745,6 +766,126 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroShown = false;
         heroName.animate().alpha(0f).setDuration(reducedMotion ? 100 : 160).start();
         ambient.animate().alpha(0f).setDuration(reducedMotion ? 140 : 300).start();
+    }
+
+    // ---- now playing (fork, docs/now-playing.md) ---------------------------------------------------
+
+    /**
+     * The band above the dock for one focused tile: the now-playing card when this tile is the app
+     * that is playing, or when it has no shelf to show; its shelf when it publishes rows; the app
+     * name otherwise. The glow takes the album's colour whenever something plays, on every tile.
+     */
+    private void showDockBand(int position) {
+        String tilePackage = adapter.packageAt(position);
+        boolean shelfHere = shelfOn && hasShelf(tilePackage);
+        boolean playingHere = nowPlayingOn && nowPlaying.isShowing()
+                && (!shelfHere || (tilePackage != null && tilePackage.equals(nowPlaying.packageName())));
+        if (playingHere) shelfHere = false;
+        showHero(position, shelfDockTop, !shelfHere && !playingHere);
+        showNowPlaying(playingHere);
+        if (shelfHere) shelfActivate(tilePackage);
+        else shelfHide();
+    }
+
+    /** Called on the main thread when the playing session, its metadata or its state changes. */
+    private void onNowPlayingChanged() {
+        if (!nowPlayingOn) return;
+        // The first callback can land before the first layout: wait for the dock position.
+        if (shelfDockTop > 0 && grid.hasFocus() && lastFocused < COLUMNS) {
+            showDockBand(lastFocused);
+        } else {
+            showNowPlaying(false);
+        }
+    }
+
+    /** The glow: the album's colour while something plays, the focused app's otherwise. */
+    private int heroColor(int position) {
+        int app = adapter.ambientColorAt(position);
+        if (!nowPlayingOn || nowPlaying == null || !nowPlaying.isShowing()) return app;
+        int album = nowPlaying.color();
+        return album == 0 ? app : album;
+    }
+
+    /** Puts the card in the band, or fades it out; keeps its progress ticking while it is up. */
+    private void showNowPlaying(boolean visible) {
+        if (!visible) {
+            stopNowPlayingTick();
+            if (!nowPlayingShown) return;
+            nowPlayingShown = false;
+            nowPlayingBox.animate().cancel();
+            nowPlayingBox.animate().alpha(0f).setDuration(reducedMotion ? 90 : 160).start();
+            return;
+        }
+        updateNowPlaying();
+        // 96 dp of artwork; its bottom sits 34 dp above the dock, in the band the app name uses.
+        nowPlayingBox.setY(shelfDockTop - 34 * density - 96 * density);
+        if (!nowPlayingShown) {
+            nowPlayingShown = true;
+            nowPlayingBox.animate().cancel();
+            nowPlayingBox.setAlpha(0f);
+            nowPlayingBox.animate().alpha(1f).setDuration(reducedMotion ? 120 : 260).start();
+        } else if (nowPlayingBox.getAlpha() < 1f) {
+            nowPlayingBox.animate().alpha(1f).setDuration(120).start();
+        }
+        startNowPlayingTick();
+    }
+
+    /** Title, artist and artwork; only touched when the track changes, so the fade is not reset. */
+    private void updateNowPlaying() {
+        String key = nowPlaying.title() + "|" + nowPlaying.artist() + "|" + nowPlaying.color()
+                + "|" + (nowPlaying.art() != null);
+        if (!key.equals(nowPlayingKey)) {
+            nowPlayingKey = key;
+            nowPlayingTitle.setText(nowPlaying.title());
+            nowPlayingArtist.setText(nowPlaying.artist().isEmpty()
+                    ? nowPlaying.appLabel() : nowPlaying.artist());
+            Bitmap art = nowPlaying.art();
+            if (art != null) {
+                nowPlayingArt.setImageBitmap(art);
+                nowPlayingNote.setVisibility(View.INVISIBLE);
+            } else {
+                nowPlayingArt.setImageDrawable(null);
+                nowPlayingNote.setVisibility(View.VISIBLE);
+            }
+        }
+        updateNowPlayingProgress();
+    }
+
+    private void updateNowPlayingProgress() {
+        int progress = nowPlaying.progress();
+        nowPlayingProgress.setVisibility(progress < 0 ? View.INVISIBLE : View.VISIBLE);
+        nowPlayingProgress.setProgress(Math.max(0, progress));
+    }
+
+    private final Runnable nowPlayingTick = new Runnable() {
+        @Override
+        public void run() {
+            if (!nowPlayingShown || !nowPlaying.isShowing()) return;
+            updateNowPlayingProgress();
+            handler.postDelayed(this, 1000);
+        }
+    };
+
+    private void startNowPlayingTick() {
+        handler.removeCallbacks(nowPlayingTick);
+        handler.postDelayed(nowPlayingTick, 1000);
+    }
+
+    private void stopNowPlayingTick() {
+        handler.removeCallbacks(nowPlayingTick);
+    }
+
+    /**
+     * Asks once for notification access. Android has no permission dialog for it, only a settings
+     * screen; refusing (or a TV without that screen) just leaves the card off, silently, for good.
+     */
+    private void nowPlayingPermissionCheck() {
+        if (!nowPlayingOn || NowPlaying.allowed(this)) return;
+        SharedPreferences prefs = getSharedPreferences("now_playing", MODE_PRIVATE);
+        if (prefs.getBoolean("asked", false)) return;
+        prefs.edit().putBoolean("asked", true).apply();
+        Toast.makeText(this, R.string.now_playing_permission, Toast.LENGTH_LONG).show();
+        NowPlaying.openSettings(this);
     }
 
     private void hideGlass() {
@@ -891,9 +1032,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             shelfGroupRows.put(entry.getKey(), recyclers);
         }
         String focused = grid.hasFocus() && lastFocused < COLUMNS ? adapter.packageAt(lastFocused) : null;
-        if (focused != null && hasShelf(focused)) {
-            showHero(lastFocused, shelfDockTop, false);
-            shelfActivate(focused);
+        if (focused != null && (hasShelf(focused) || nowPlayingOn)) {
+            // Re-run the whole band rule: the rows may have changed which one belongs on top.
+            showDockBand(lastFocused);
         } else {
             shelfHide();
         }

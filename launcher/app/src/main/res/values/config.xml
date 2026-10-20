@@ -114,4 +114,9 @@
     <integer name="stremio_shelf_max_items">12</integer>
     <!-- The dock app whose cards follow their own deep links and show 2:3 posters (Stremio, by default). -->
     <string name="stremio_shelf_package" translatable="false">com.stremio.one</string>
+
+    <!-- Now playing (fork feature, docs/now-playing.md): the track or video the focused app is playing,
+         with its artwork and the glow's colour taken from it. Needs the one-time notification-access
+         grant; without it the card is simply absent, the app name stays. false turns it off for good. -->
+    <bool name="now_playing">true</bool>
 </resources>

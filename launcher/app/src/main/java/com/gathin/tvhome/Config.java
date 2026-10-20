@@ -72,6 +72,8 @@ final class Config {
     final int stremioShelfMaxItems;
     /** The app whose TV channels feed the shelf (stremio_shelf_package). */
     final String stremioShelfPackage;
+    /** Now playing: show the current track and tint the glow (config.xml, now_playing). */
+    final boolean nowPlaying;
     /** Full-screen picture behind the launcher, or null for the plain colour. */
     final File wallpaper;
     /** Whether the overlay file was present and parsed. */
@@ -85,7 +87,7 @@ final class Config {
                    int skyIntensity, boolean weatherEnabled, Double weatherLatitude, Double weatherLongitude,
                    String weatherPlace, String weatherUnits, int weatherRefreshMinutes,
                    boolean stremioShelf, boolean stremioShelfPosters, int stremioShelfRows,
-                   int stremioShelfMaxItems, String stremioShelfPackage,
+                   int stremioShelfMaxItems, String stremioShelfPackage, boolean nowPlaying,
                    File wallpaper, boolean overlayApplied) {
         this.dockApps = Collections.unmodifiableList(dockApps);
         this.hiddenApps = Collections.unmodifiableList(hiddenApps);
@@ -114,6 +116,7 @@ final class Config {
         this.stremioShelfRows = stremioShelfRows;
         this.stremioShelfMaxItems = stremioShelfMaxItems;
         this.stremioShelfPackage = stremioShelfPackage;
+        this.nowPlaying = nowPlaying;
         this.wallpaper = wallpaper;
         this.overlayApplied = overlayApplied;
     }
@@ -152,6 +155,7 @@ final class Config {
         int shelfRows = res.getInteger(R.integer.stremio_shelf_rows);
         int shelfItems = res.getInteger(R.integer.stremio_shelf_max_items);
         String shelfPackage = res.getString(R.string.stremio_shelf_package).trim();
+        boolean nowPlaying = res.getBoolean(R.bool.now_playing);
         boolean applied = false;
 
         File dir = dir(ctx);
@@ -186,6 +190,7 @@ final class Config {
             shelfRows = integer(json, "stremio_shelf_rows", shelfRows, 1, 3);
             shelfItems = integer(json, "stremio_shelf_max_items", shelfItems, 1, 20);
             shelfPackage = string(json, "stremio_shelf_package", shelfPackage);
+            nowPlaying = bool(json, "now_playing", nowPlaying);
         }
         // A coordinate outside its range is ignored, keeping the weather line hidden rather than wrong.
         if (weatherLat != null && !Weather.validLatitude(weatherLat)) weatherLat = null;
@@ -203,7 +208,7 @@ final class Config {
                 Math.max(0, Math.min(100, skyIntensity)), weatherEnabled, weatherLat, weatherLon,
                 weatherPlace, weatherUnits, weatherRefresh,
                 shelf, shelfPosters, Math.max(1, Math.min(3, shelfRows)), Math.max(1, Math.min(20, shelfItems)),
-                shelfPackage, wallpaper, applied);
+                shelfPackage, nowPlaying, wallpaper, applied);
     }
 
     /** A coordinate from config.xml: blank or unparsable means "not set". */

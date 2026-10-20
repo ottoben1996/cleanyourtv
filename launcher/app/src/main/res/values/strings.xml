@@ -21,6 +21,8 @@
     <string name="shelf_permission_denied">Dock shelves: TV listings permission denied, the shelves stay hidden</string>
     <string name="shelf_resume">Continue watching</string>
     <string name="shelf_for_you">For you</string>
+    <string name="now_playing_permission">Now playing: allow Home in notification access to show the current track</string>
+    <string name="now_playing_note" translatable="false">♪</string>
     <string name="date_format">EEEE  d MMMM</string>
     <string name="dream_name">Clock</string>
     <string name="vpn">VPN</string>
