@@ -8,7 +8,7 @@ the shelf reads the TV provider, and it hides itself the moment anything is miss
 ┌──────────────────────────────────────────────┐
 │  ⛅ Good evening        20:14                │
 │                                              │
-│                                        ▓▓▓▓  │
+│  CONTINUER DE REGARDER                       │
 │  ▓▓▓▓  ▓▓▓▓  ▓▓▓▓  ▓▓▓▓  ▓▓▓▓  ▓▓▓▓   ▓▓▓▓  │  ← shelf, only while Stremio's tile is focused
 │  ▓▓▓▓  ▓▓▓▓  ▓▓▓▓  ▓▓▓▓  ▓▓▓▓  ▓▓▓▓   ▓▓▓▓  │
 │                                              │
@@ -36,9 +36,9 @@ title, poster, duration, playback position and a `stremio:///detail/…` deep li
    `stremio_shelf_rows` and `stremio_shelf_max_items` — rows that would run into the clock and the
    greeting are dropped rather than covering them (one 96×144 dp row fits above the dock on a
    1080p TV, two fit on a 720p one);
-3. draws one poster row per channel. Each card shows the poster, the title underneath, an `S07E09`
-   badge when the episode link carries an IMDb-shaped id, and a thin progress bar from Stremio's
-   playback position;
+3. draws one poster row per channel, labelled with the channel name in small caps. Each card shows
+   the poster, the title underneath, an `S07E09` badge when the episode link carries an IMDb-shaped
+   id, and a thin inset progress bar with a faint track, from Stremio's playback position;
 4. opens the deep link on click, so Stremio resumes exactly where its own row would.
 
 The read happens on a background thread on every resume of Home (a few hundred rows at most) and
