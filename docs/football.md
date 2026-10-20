@@ -27,7 +27,15 @@ Keep the token out of the repository: put it in `football-token.txt` in the app'
 directory, one line, nothing else.
 
 ```bash
+TV_HOST=192.168.1.50 tools/football.sh <token>          # Linux, macOS
+tools\football.ps1 -TvHost 192.168.1.50 <token>         # Windows
+```
+
+The helper restarts Home; the row appears on the next start. Without the Python venv, plain adb:
+
+```bash
 adb push football-token.txt /sdcard/Android/data/com.gathin.tvhome/files/football-token.txt
+adb shell am force-stop com.gathin.tvhome && adb shell am start -n com.gathin.tvhome/.MainActivity
 ```
 
 A `football_token` key in `config.json` also works (it wins over the file), but then a theme or a
