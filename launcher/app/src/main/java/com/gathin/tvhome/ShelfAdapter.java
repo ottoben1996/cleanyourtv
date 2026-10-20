@@ -111,9 +111,9 @@ final class ShelfAdapter extends RecyclerView.Adapter<ShelfAdapter.Holder> {
     }
 
     private void animate(Holder h, boolean focused) {
-        h.title.setAlpha(focused ? 1f : 0.6f);
+        h.title.setAlpha(focused ? 1f : 0.7f);
         h.card.setForeground(focused ? h.card.getContext().getDrawable(R.drawable.shelf_card_focus) : null);
-        float scale = focused ? 1.08f : 1f;
+        float scale = focused ? 1.06f : 1f;
         if (reducedMotion) {
             h.card.setScaleX(scale);
             h.card.setScaleY(scale);

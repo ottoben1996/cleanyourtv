@@ -1,5 +1,6 @@
 package com.gathin.tvhome;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.ActivityNotFoundException;
@@ -213,6 +214,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     };
 
+    // The shelf rows are looked up with findViewById below; the androidx setHasFixedSize check is
+    // file-wide and blames this grid call for the row RecyclerView (which is wrap_content, but
+    // scrolls horizontally), while the grid itself is match_parent on both axes.
+    @SuppressLint("InvalidSetHasFixedSize")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -784,10 +789,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         int posterW = Math.round(ShelfAdapter.CARD_W_DP * density * 1.1f);
         int posterH = Math.round(ShelfAdapter.CARD_H_DP * density * 1.1f);
-        int radius = Math.round(10 * density);
+        int radius = Math.round(6 * density);
         for (int row = 0; row < shelfData.size(); row++) {
             final int rowIndex = row;
-            RecyclerView rv = (RecyclerView) getLayoutInflater().inflate(R.layout.shelf_row, shelfBox, false);
+            View rowView = getLayoutInflater().inflate(R.layout.shelf_row, shelfBox, false);
+            ((TextView) rowView.findViewById(R.id.shelfLabel)).setText(shelfData.get(row).title);
+            RecyclerView rv = rowView.findViewById(R.id.shelfRow);
             rv.setLayoutManager(new LinearLayoutManager(this, RecyclerView.HORIZONTAL, false));
             rv.setItemAnimator(null);
             rv.setAdapter(new ShelfAdapter(shelfData.get(row).items, posters, reducedMotion, radius,
@@ -807,7 +814,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     return shelfItemKey(rowIndex, position, keyCode);
                 }
             }));
-            shelfBox.addView(rv);
+            shelfBox.addView(rowView);
             shelfRecyclers.add(rv);
         }
         if (shelfOnFocusedTile()) {
@@ -854,10 +861,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         shelfBox.setVisibility(View.GONE);
     }
 
-    /** The shelf shares the band the hero name uses: its bottom sits 40dp above the dock row. */
+    /** The shelf shares the band the hero name uses: its bottom sits 30dp above the dock row. */
     private void positionShelf() {
         if (!shelfShown() || shelfDockTop <= 0) return;
-        shelfBox.setY(Math.max(8 * density, shelfDockTop - 40 * density - shelfBox.getHeight()));
+        shelfBox.setY(Math.max(8 * density, shelfDockTop - 30 * density - shelfBox.getHeight()));
     }
 
     /**
@@ -867,9 +874,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     private void shelfFitRows() {
         if (shelfDockTop <= 0 || shelfRecyclers.size() <= 1) return;
-        int rowH = shelfRecyclers.get(0).getHeight();
+        // The row container, not the RecyclerView: it also carries the channel label.
+        int rowH = shelfBox.getChildCount() == 0 ? 0 : shelfBox.getChildAt(0).getHeight();
         if (rowH <= 0) return;                      // not laid out yet
-        int limit = (int) (shelfDockTop - 40 * density - headerBottom() - 8 * density);
+        int limit = (int) (shelfDockTop - 30 * density - headerBottom() - 8 * density);
         int fits = Math.max(1, Math.min(shelfRecyclers.size(), limit / rowH));
         if (fits >= shelfRecyclers.size()) return;
         while (shelfRecyclers.size() > fits) {

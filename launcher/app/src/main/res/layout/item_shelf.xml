@@ -42,7 +42,7 @@
         <View
             android:id="@+id/shelfShade"
             android:layout_width="match_parent"
-            android:layout_height="44dp"
+            android:layout_height="28dp"
             android:layout_gravity="bottom"
             android:background="@drawable/shelf_shade"
             android:importantForAccessibility="no" />
@@ -51,11 +51,13 @@
             android:id="@+id/shelfProgress"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
-            android:layout_height="3dp"
+            android:layout_height="2dp"
             android:layout_gravity="bottom"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:layout_marginBottom="6dp"
             android:max="100"
-            android:progressTint="#E6FFFFFF"
-            android:progressBackgroundTint="#33000000"
+            android:progressDrawable="@drawable/shelf_progress"
             android:visibility="gone"
             android:importantForAccessibility="no" />
 
@@ -85,9 +87,9 @@
         android:singleLine="true"
         android:ellipsize="end"
         android:textColor="#F2FFFFFF"
-        android:textSize="12sp"
+        android:textSize="13sp"
         android:fontFamily="@font/outfit"
         android:fontVariationSettings="'wght' 500"
-        android:alpha="0.6"
+        android:alpha="0.7"
         android:importantForAccessibility="no" />
 </LinearLayout>
