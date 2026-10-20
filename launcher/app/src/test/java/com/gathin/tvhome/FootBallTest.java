@@ -136,6 +136,19 @@ public class FootBallTest {
     }
 
     @Test
+    public void sameComparesIdsScoresAndStatuses() throws Exception {
+        List<FootBall.Match> a = FootBall.parse(new JSONObject(payload()), CHANNELS, TEAMS);
+        List<FootBall.Match> b = FootBall.parse(new JSONObject(payload()), CHANNELS, TEAMS);
+        assertTrue(FootBall.same(a, b));
+
+        List<FootBall.Match> goal = FootBall.parse(
+                new JSONObject(payload().replace("\"home\": 2, \"away\": 1",
+                        "\"home\": 3, \"away\": 1")), CHANNELS, TEAMS);
+        assertFalse(FootBall.same(a, goal));
+        assertFalse(FootBall.same(a, a.subList(0, 2)));
+    }
+
+    @Test
     public void accentsAndCaseDoNotMatterInTheTeamRule() throws Exception {
         assertEquals("seville", FootBall.normalize("  Séville "));
         assertEquals("fc bayern munchen", FootBall.normalize("FC Bayern München"));

@@ -79,12 +79,15 @@ final class FootBall {
         }
     }
 
-    /** Live first, then what is coming, then the results (the most recent first). */
+    /** Live first, then what is coming, then the results (the most recent first); id breaks ties. */
     static final Comparator<Match> ORDER = (a, b) -> {
         int ra = a.live() ? 0 : a.finished() ? 2 : 1;
         int rb = b.live() ? 0 : b.finished() ? 2 : 1;
         if (ra != rb) return ra - rb;
-        return ra == 2 ? Long.compare(b.kickoff, a.kickoff) : Long.compare(a.kickoff, b.kickoff);
+        int byTime = ra == 2 ? Long.compare(b.kickoff, a.kickoff) : Long.compare(a.kickoff, b.kickoff);
+        // The API does not keep a stable order inside a kick-off slot; the id does, so the row does
+        // not reshuffle itself on every refresh.
+        return byTime != 0 ? byTime : Long.compare(a.id, b.id);
     };
 
     private FootBall() {
@@ -148,6 +151,22 @@ final class FootBall {
             if (out.size() >= max) break;
         }
         return out;
+    }
+
+    /**
+     * Whether two answers would draw the same row: same matches in the same order with the same
+     * score and status. A tick that changes nothing must not rebuild the cards (and lose their
+     * scroll position).
+     */
+    static boolean same(List<Match> a, List<Match> b) {
+        if (a.size() != b.size()) return false;
+        for (int i = 0; i < a.size(); i++) {
+            Match x = a.get(i);
+            Match y = b.get(i);
+            if (x.id != y.id || x.homeScore != y.homeScore || x.awayScore != y.awayScore
+                    || x.minute != y.minute || !x.status.equals(y.status)) return false;
+        }
+        return true;
     }
 
     /**

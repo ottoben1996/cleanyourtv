@@ -1001,7 +1001,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             handler.post(() -> {
                 footLoading = false;
                 if (fetched == null || isFinishing()) return;
+                boolean changed = !FootBall.same(footMatches, fetched);
                 footMatches = fetched;
+                if (!changed) return;               // same scores: keep the cards and their scroll
                 if (!shelfBox.hasFocus()) {
                     shelfPopulate();
                 } else if (grid.hasFocus() && lastFocused < COLUMNS) {

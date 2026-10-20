@@ -85,7 +85,8 @@ LEAP-S1, and the football apps do not publish their channels to the TV provider.
 
 ## What the row keeps
 
-- **Live now**: `IN_PLAY` and `PAUSED` matches first; the card shows the minute (or `Mi-temps`).
+- **Live now**: `IN_PLAY` and `PAUSED` matches first; the card shows the minute when the API sends
+  one (the free tier often omits it, the card then reads `En direct`) or `Mi-temps`.
 - **Coming**: everything that has not started, by kick-off, today and tomorrow. Tomorrow's matches
   are labelled `Demain 21:00`.
 - **Results**: finished matches, the most recent first, kept for four hours after kick-off.
@@ -102,8 +103,10 @@ box's timezone.
   than a minute after the previous one is skipped. `FootBall.fetch` returns null on any failure
   (offline, invalid token, rate limit) and the previous list stays on screen; an empty list is a
   successful "no match" and hides the row.
-- While the football tile is focused, a one-minute ticker refetches the scores and rebuilds the row
-  (not while a card has focus, so the highlight is not lost).
+- While the football tile is focused, a one-minute ticker refetches the scores (not while a card has
+  focus, so the highlight is not lost). An answer identical to the one on screen leaves the cards
+  alone, scroll offset included; cards are ordered by state then kick-off, with the match id as a
+  tie-break, so a refresh never reshuffles the row.
 - The row is not a TV channel: `FootBall` parses the API answer into `Match` objects, `FootAdapter`
   draws the cards, and nothing is cached on disk. Plain Java, tested on the JVM in
   `FootBallTest`.
