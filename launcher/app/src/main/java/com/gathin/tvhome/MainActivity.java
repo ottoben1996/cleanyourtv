@@ -67,9 +67,11 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -111,15 +113,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private View weatherRow;
     private ImageView weatherIcon;
     private TextView weatherText;
-    /** Stremio shelf (stremio_shelf in config.xml, docs/stremio-shelf.md): poster rows above the dock. */
+    /** Dock shelves (stremio_shelf in config.xml, docs/dock-shelves.md): content rows above the dock. */
     private boolean shelfOn;
-    private String shelfPackage = TvShelf.DEFAULT_PACKAGE;
     private int shelfRowCount = 1;
     private int shelfMaxItems = 12;
+    /** The dock app whose rows follow its own deep links (config.xml, stremio_shelf_package). */
+    private String stremioShelfPackage = TvShelf.DEFAULT_PACKAGE;
+    /** Dock order (config.xml dock_apps): every tile is asked for a source on each refresh. */
+    private List<String> dockApps = Collections.emptyList();
     private LinearLayout shelfBox;
     private PosterLoader posters;
-    private List<TvShelf.Row> shelfData = Collections.emptyList();
-    private final List<RecyclerView> shelfRecyclers = new ArrayList<>();
+    /** Rows per dock tile, read once per resume; a tile without rows shows no shelf. */
+    private final Map<String, List<TvShelf.Row>> shelfRows = new HashMap<>();
+    /** One row group per dock tile, all in the box, only the focused tile's shown. */
+    private final Map<String, LinearLayout> shelfGroups = new HashMap<>();
+    /** Recyclers per dock tile: D-pad and the row fit work on the active group. */
+    private final Map<String, List<RecyclerView>> shelfGroupRows = new HashMap<>();
+    /** Source per dock tile, cached: it is looked up on every dock move. */
+    private final Map<String, ShelfSource> shelfSources = new HashMap<>();
+    /** The active group's recyclers (a copy: hiding rows must not lose them for the next visit). */
+    private List<RecyclerView> shelfRecyclers = new ArrayList<>();
+    /** The tile whose shelf is on screen: an item without a deep link opens in this package. */
+    private String shelfTilePackage;
     private boolean shelfLoading;
     /** Top of the dock row in root coordinates: the shelf sits 40dp above it, where the hero name lives. */
     private float shelfDockTop;
@@ -268,9 +283,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         moduleCards = cfg.moduleCards;
         hiddenApps = new HashSet<>(cfg.hiddenApps);
         shelfOn = cfg.stremioShelf;
-        shelfPackage = cfg.stremioShelfPackage;
+        stremioShelfPackage = cfg.stremioShelfPackage;
         shelfRowCount = cfg.stremioShelfRows;
         shelfMaxItems = cfg.stremioShelfMaxItems;
+        dockApps = cfg.dockApps;
         shelfBox = findViewById(R.id.shelfBox);
         // The rows are built while the box is GONE, so its height is only known after the first
         // layout: position it again on every size change instead of once with a height of zero.
@@ -364,7 +380,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return true;
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                // Down goes into the Stremio shelf when it is up, otherwise back to the dock tile
+                // Down goes into the shelf when it is up, otherwise back to the dock tile
                 // Up came from, not wherever the focus finder lands.
                 if (shelfShown()) {
                     focusShelfItem(0, shelfFocusedCol);
@@ -612,11 +628,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 else grid.smoothScrollBy(0, dy);
             }
             shelfDockTop = scroll ? r.top - dy : r.top;
-            boolean shelfHere = shelfOn && !shelfData.isEmpty() && !shelfRecyclers.isEmpty()
-                    && shelfPackage.equals(adapter.packageAt(position));
-            // With the Stremio shelf up, the band above the dock belongs to the posters, not the app name.
+            String tilePackage = adapter.packageAt(position);
+            boolean shelfHere = shelfOn && hasShelf(tilePackage);
+            // With a shelf up, the band above the dock belongs to its cards, not the app name.
             showHero(position, shelfDockTop, !shelfHere);
-            if (shelfHere) shelfShow();
+            if (shelfHere) shelfActivate(tilePackage);
             else shelfHide();
         } else {
             hideHero();
@@ -631,7 +647,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /**
      * The band above the dock: the focused app's name and the glow in its colour, positioned in code.
-     * With {@code nameVisible} false (the Stremio shelf fills the band) only the glow shows.
+     * With {@code nameVisible} false (a shelf fills the band) only the glow shows.
      */
     private void showHero(int position, float dockTopInRoot, boolean nameVisible) {
         String label = adapter.labelAt(position);
@@ -737,7 +753,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         glass.animate().alpha(0f).setDuration(160).start();
     }
 
-    // ---- Stremio shelf (fork, docs/stremio-shelf.md) ---------------------------------------------
+    // ---- dock shelves (fork, docs/dock-shelves.md) -----------------------------------------------
 
     /** Asks once for the TV-listings permission, on builds that make it a runtime permission. */
     private void shelfPermissionCheck() {
@@ -759,19 +775,36 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
-    /** Re-reads the shelf app's channels off the main thread; cheap enough to run on every resume. */
+    /** Re-reads every dock tile's rows off the main thread; cheap enough to run on every resume. */
     private void shelfRefresh() {
         if (!shelfOn || shelfLoading || !TvShelf.allowed(this)) return;
         shelfLoading = true;
         final Context appContext = getApplicationContext();
-        final String pkg = shelfPackage;
+        final List<String> tiles = new ArrayList<>(dockApps);
         final int rows = shelfRowCount, items = shelfMaxItems;
+        final String stremio = stremioShelfPackage;
         Thread t = new Thread(() -> {
-            final List<TvShelf.Row> data = TvShelf.load(appContext, pkg, rows, items);
+            Map<String, List<TvShelf.Row>> data = new HashMap<>();
+            for (String tile : tiles) {
+                ShelfSource source = ShelfSource.forTile(tile, stremio, opensYouTube(tile),
+                        appContext.getString(R.string.shelf_for_you));
+                if (source == null) continue;
+                List<TvShelf.Row> loaded = TvShelf.load(appContext, source.provider, rows, items, source.rewrite());
+                if (source.artOnly) loaded = TvShelf.withoutMissingArt(loaded);
+                List<TvShelf.Row> all = loaded;
+                if (source.watchNext) {
+                    List<TvShelf.Row> watched = TvShelf.withoutMissingArt(
+                            TvShelf.loadWatchNext(appContext, source.provider, items, source.rewrite()));
+                    // One row, not two: on a 1080p band the second row would be hidden anyway.
+                    all = TvShelf.mergeResume(watched, loaded, appContext.getString(R.string.shelf_for_you));
+                }
+                if (!all.isEmpty()) data.put(tile, all);
+            }
             handler.post(() -> {
                 shelfLoading = false;
                 if (isFinishing()) return;
-                shelfData = data;
+                shelfRows.clear();
+                shelfRows.putAll(data);
                 shelfPopulate();
             });
         }, "shelf-read");
@@ -779,61 +812,109 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         t.start();
     }
 
-    /** Builds one horizontal row per channel, then puts the shelf back on screen if it belongs there. */
+    /** The row source for a dock tile, or null when it has none. Cached: every dock move asks. */
+    private ShelfSource shelfSourceFor(String tilePackage) {
+        if (tilePackage == null || tilePackage.isEmpty()) return null;
+        if (!shelfSources.containsKey(tilePackage)) {
+            shelfSources.put(tilePackage, ShelfSource.forTile(tilePackage, stremioShelfPackage,
+                    opensYouTube(tilePackage), getString(R.string.shelf_for_you)));
+        }
+        return shelfSources.get(tilePackage);
+    }
+
+    /** Whether this app claims youtube.com links (TizenTube does): it can play a rewritten watch URL. */
+    private boolean opensYouTube(String pkg) {
+        try {
+            return getPackageManager().resolveActivity(
+                    new Intent(Intent.ACTION_VIEW, Uri.parse(ShelfSource.YOUTUBE_PROBE)).setPackage(pkg), 0) != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Whether this dock tile has rows to show (built by the last refresh). */
+    private boolean hasShelf(String tilePackage) {
+        List<TvShelf.Row> rows = tilePackage == null ? null : shelfRows.get(tilePackage);
+        return rows != null && !rows.isEmpty() && shelfGroups.containsKey(tilePackage);
+    }
+
+    /** Builds one hidden group of rows per tile that has data, then hands the band to the focused tile. */
     private void shelfPopulate() {
         shelfBox.removeAllViews();
-        shelfRecyclers.clear();
-        if (!shelfOn || shelfData.isEmpty()) {
+        shelfGroups.clear();
+        shelfGroupRows.clear();
+        shelfRecyclers = new ArrayList<>();
+        shelfTilePackage = null;
+        if (!shelfOn || shelfRows.isEmpty()) {
             shelfHide();
             return;
         }
-        int posterW = Math.round(ShelfAdapter.CARD_W_DP * density * 1.1f);
-        int posterH = Math.round(ShelfAdapter.CARD_H_DP * density * 1.1f);
-        int radius = Math.round(6 * density);
-        for (int row = 0; row < shelfData.size(); row++) {
-            final int rowIndex = row;
-            View rowView = getLayoutInflater().inflate(R.layout.shelf_row, shelfBox, false);
-            ((TextView) rowView.findViewById(R.id.shelfLabel)).setText(shelfData.get(row).title);
-            RecyclerView rv = rowView.findViewById(R.id.shelfRow);
-            rv.setLayoutManager(new LinearLayoutManager(this, RecyclerView.HORIZONTAL, false));
-            rv.setItemAnimator(null);
-            rv.setAdapter(new ShelfAdapter(shelfData.get(row).items, posters, reducedMotion, radius,
-                    posterW, posterH, new ShelfAdapter.Listener() {
-                @Override
-                public void onItemFocused(int position) {
-                    shelfFocusedCol = position;
-                }
+        for (Map.Entry<String, List<TvShelf.Row>> entry : shelfRows.entrySet()) {
+            ShelfSource source = shelfSourceFor(entry.getKey());
+            if (source == null || entry.getValue().isEmpty()) continue;
+            LinearLayout group = new LinearLayout(this);
+            group.setOrientation(LinearLayout.VERTICAL);
+            group.setVisibility(View.GONE);
+            List<RecyclerView> recyclers = new ArrayList<>();
+            for (int r = 0; r < entry.getValue().size(); r++) {
+                final int rowIndex = r;
+                View rowView = getLayoutInflater().inflate(R.layout.shelf_row, group, false);
+                ((TextView) rowView.findViewById(R.id.shelfLabel))
+                        .setText(source.label != null ? source.label : entry.getValue().get(r).title);
+                RecyclerView rv = rowView.findViewById(R.id.shelfRow);
+                rv.setLayoutManager(new LinearLayoutManager(this, RecyclerView.HORIZONTAL, false));
+                rv.setItemAnimator(null);
+                rv.setAdapter(new ShelfAdapter(entry.getValue().get(r).items, posters, reducedMotion,
+                        Math.round(6 * density), Math.round(source.cardWidthDp * density),
+                        Math.round(source.cardHeightDp * density), new ShelfAdapter.Listener() {
+                    @Override
+                    public void onItemFocused(int position) {
+                        shelfFocusedCol = position;
+                    }
 
-                @Override
-                public void onItemClicked(TvShelf.Item item) {
-                    openShelfItem(item);
-                }
+                    @Override
+                    public void onItemClicked(TvShelf.Item item) {
+                        openShelfItem(item);
+                    }
 
-                @Override
-                public boolean onItemKey(int position, int keyCode) {
-                    return shelfItemKey(rowIndex, position, keyCode);
-                }
-            }));
-            shelfBox.addView(rowView);
-            shelfRecyclers.add(rv);
+                    @Override
+                    public boolean onItemKey(int position, int keyCode) {
+                        return shelfItemKey(rowIndex, position, keyCode);
+                    }
+                }));
+                group.addView(rowView);
+                recyclers.add(rv);
+            }
+            shelfBox.addView(group, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            shelfGroups.put(entry.getKey(), group);
+            shelfGroupRows.put(entry.getKey(), recyclers);
         }
-        if (shelfOnFocusedTile()) {
-            // The focused tile is the shelf app's: hand it the band and drop the app name.
+        String focused = grid.hasFocus() && lastFocused < COLUMNS ? adapter.packageAt(lastFocused) : null;
+        if (focused != null && hasShelf(focused)) {
             showHero(lastFocused, shelfDockTop, false);
-            shelfShow();
+            shelfActivate(focused);
         } else {
             shelfHide();
         }
-        shelfBox.post(() -> {
-            positionShelf();
-            shelfFitRows();
-        });
     }
 
-    /** Whether the shelf belongs on screen: its tile is focused and there is something to draw. */
-    private boolean shelfOnFocusedTile() {
-        return shelfOn && grid.hasFocus() && lastFocused < COLUMNS
-                && shelfPackage.equals(adapter.packageAt(lastFocused));
+    /** Hands the band to one tile's group: the other groups stay hidden and the fit works on this one. */
+    private void shelfActivate(String tilePackage) {
+        LinearLayout group = shelfGroups.get(tilePackage);
+        if (group == null) {
+            shelfHide();
+            return;
+        }
+        if (!tilePackage.equals(shelfTilePackage)) {
+            for (LinearLayout other : shelfGroups.values()) {
+                other.setVisibility(other == group ? View.VISIBLE : View.GONE);
+            }
+            shelfTilePackage = tilePackage;
+            List<RecyclerView> rows = shelfGroupRows.get(tilePackage);
+            shelfRecyclers = rows == null ? new ArrayList<>() : new ArrayList<>(rows);
+        }
+        shelfShow();
     }
 
     private boolean shelfShown() {
@@ -870,21 +951,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /**
      * Drops trailing rows that would run into the header: the band between the header and the dock
      * takes what it takes, and one 96×144 dp row is what fits on a 1080p TV. Extra configured rows
-     * are simply not drawn rather than covering the clock; the next populate tries again.
+     * are hidden rather than covering the clock, and come back whole when the band is taller.
      */
     private void shelfFitRows() {
-        if (shelfDockTop <= 0 || shelfRecyclers.size() <= 1) return;
-        // The row container, not the RecyclerView: it also carries the channel label.
-        int rowH = shelfBox.getChildCount() == 0 ? 0 : shelfBox.getChildAt(0).getHeight();
+        LinearLayout group = shelfTilePackage == null ? null : shelfGroups.get(shelfTilePackage);
+        if (shelfDockTop <= 0 || group == null || shelfRecyclers.size() <= 1) return;
+        // The row container, not the RecyclerView: it also carries the row label.
+        int rowH = group.getChildCount() == 0 ? 0 : group.getChildAt(0).getHeight();
         if (rowH <= 0) return;                      // not laid out yet
         int limit = (int) (shelfDockTop - 30 * density - headerBottom() - 8 * density);
         int fits = Math.max(1, Math.min(shelfRecyclers.size(), limit / rowH));
-        if (fits >= shelfRecyclers.size()) return;
-        while (shelfRecyclers.size() > fits) {
-            shelfRecyclers.remove(shelfRecyclers.size() - 1);
-            shelfBox.removeViewAt(shelfBox.getChildCount() - 1);
+        for (int i = 0; i < group.getChildCount(); i++) {
+            group.getChildAt(i).setVisibility(i < fits ? View.VISIBLE : View.GONE);
         }
-        shelfBox.post(this::positionShelf);
+        if (fits < group.getChildCount()) group.post(this::positionShelf);
     }
 
     /** Bottom of the header block (weather line, greeting, clock, date) in root coordinates. */
@@ -941,11 +1021,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         (btnInputs.getVisibility() == View.VISIBLE ? btnInputs : btnWifi).requestFocus();
     }
 
-    /** Follows a poster's Stremio deep link; falls back to opening the app when the link is unusable. */
+    /** Follows a card's deep link; falls back to opening the tile's app when the link is unusable. */
     private void openShelfItem(TvShelf.Item item) {
-        Intent i = TvShelf.launchIntent(item.intentUri, shelfPackage);
-        if (i == null) i = getPackageManager().getLeanbackLaunchIntentForPackage(shelfPackage);
-        if (i == null) i = getPackageManager().getLaunchIntentForPackage(shelfPackage);
+        String pkg = shelfTilePackage == null ? "" : shelfTilePackage;
+        Intent i = TvShelf.launchIntent(item.intentUri, pkg);
+        if (i == null && !pkg.isEmpty()) i = getPackageManager().getLeanbackLaunchIntentForPackage(pkg);
+        if (i == null && !pkg.isEmpty()) i = getPackageManager().getLaunchIntentForPackage(pkg);
         if (i == null) {
             Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
             return;
@@ -969,7 +1050,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
             if (position < COLUMNS) {
-                // Dock row: into the Stremio shelf when it is up, otherwise to the top bar.
+                // Dock row: into the shelf when it is up, otherwise to the top bar.
                 if (shelfShown()) {
                     focusShelfItem(shelfRecyclers.size() - 1, shelfFocusedCol);
                     return true;

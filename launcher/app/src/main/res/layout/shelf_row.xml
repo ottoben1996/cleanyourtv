@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One labelled row of the Stremio shelf; rows are stacked inside @id/shelfBox. The label is the
+<!-- One labelled row of a dock shelf; rows are stacked inside @id/shelfBox. The label is the
      channel name (for example "Continuer de regarder") and sits on the same 56dp left edge as the
      posters, which is also the header's text edge. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"

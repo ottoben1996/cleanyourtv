@@ -62,7 +62,7 @@ final class Config {
     final String weatherUnits;
     /** How long a reading stays fresh, in minutes (15 to 720). */
     final int weatherRefreshMinutes;
-    /** Stremio shelf: whether the poster rows are wanted at all (config.xml, stremio_shelf). */
+    /** Dock shelves: whether the content rows are wanted at all (config.xml, stremio_shelf). */
     final boolean stremioShelf;
     /** Download posters instead of coloured placeholders (config.xml, stremio_shelf_posters). */
     final boolean stremioShelfPosters;

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One Stremio shelf poster: card, progress line and the title underneath. The whole item takes
+<!-- One shelf card: artwork, progress line and the title underneath. The whole item takes
      focus (children are blocked), so D-pad left/right moves along the row of posters. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/shelfItem"

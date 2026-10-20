@@ -308,7 +308,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         return e.ambient;
     }
 
-    /** Package of the app at a position, or null: the Stremio shelf shows for one app (config.xml, stremio_shelf_package). */
+    /** Package of the app at a position, or null: the dock shelves pick a tile's rows with it. */
     String packageAt(int position) {
         return position >= 0 && position < items.size() ? items.get(position).pkg : null;
     }

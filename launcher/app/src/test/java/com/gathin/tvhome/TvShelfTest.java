@@ -79,7 +79,85 @@ public class TvShelfTest {
         assertTrue(TvShelf.buildRows(channels, byChannel, 2, 0).isEmpty());
     }
 
+    @Test
+    public void youtubeWatchUrlUnwrapsPublisherLinksAndPlainOnes() {
+        // What the Google YouTube app publishes: an intent:// wrapper around a watch URL.
+        assertEquals("https://www.youtube.com/watch?v=G02QEhmleYA",
+                TvShelf.youtubeWatchUrl("intent://www.youtube.com/watch?v=G02QEhmleYA&launch=launcher"
+                        + "#Intent;scheme=https;package=com.google.android.youtube.tv;end"));
+        // What the watch-next table stores: a plain URL with tracking parameters.
+        assertEquals("https://www.youtube.com/watch?v=IBzI77JH-qE",
+                TvShelf.youtubeWatchUrl("https://www.youtube.com/watch?v=IBzI77JH-qE&launch=launcher&parentCsn=Z-69"));
+        assertEquals("https://www.youtube.com/watch?v=X4klc4KNPbg",
+                TvShelf.youtubeWatchUrl("https://youtu.be/X4klc4KNPbg?t=30"));
+        assertEquals("https://www.youtube.com/watch?v=abc123DEF45",
+                TvShelf.youtubeWatchUrl("https://www.youtube.com/shorts/abc123DEF45"));
+    }
+
+    @Test
+    public void youtubeWatchUrlLeavesOtherLinksAlone() {
+        assertNull(TvShelf.youtubeWatchUrl("stremio:///detail/movie/tt1856101"));
+        assertNull(TvShelf.youtubeWatchUrl("https://www.youtube.com/watch"));      // no video id
+        assertNull(TvShelf.youtubeWatchUrl("https://example.com/watch?v=abcdefgh")); // another site
+        assertNull(TvShelf.youtubeWatchUrl(null));
+    }
+
+    @Test
+    public void resumeRowLeadsWithWatchedTitlesAndDropsDuplicates() {
+        TvShelf.Item watchedA = play(1, "Watched A", 40, "aaa111");
+        TvShelf.Item watchedB = play(2, "Watched B", 12, "bbb222");
+        TvShelf.Item sameAsB = play(9, "Recommended B", -1, "bbb222");
+        TvShelf.Item fresh = play(3, "Fresh", -1, "ccc333");
+        List<TvShelf.Row> watched = Collections.singletonList(
+                new TvShelf.Row("Continue watching", Arrays.asList(watchedA, watchedB)));
+        List<TvShelf.Row> channels = Arrays.asList(
+                new TvShelf.Row("Recommandations", Arrays.asList(sameAsB, fresh)),
+                new TvShelf.Row("Abonnements", Collections.singletonList(item(4))));
+
+        List<TvShelf.Row> rows = TvShelf.mergeResume(watched, channels, "For you");
+        assertEquals(2, rows.size());
+        assertEquals("For you", rows.get(0).title);
+        assertEquals(3, rows.get(0).items.size());
+        assertEquals("Watched A", rows.get(0).items.get(0).title);
+        assertEquals("Watched B", rows.get(0).items.get(1).title);   // the resume copy wins over the pick
+        assertEquals("Fresh", rows.get(0).items.get(2).title);
+        assertEquals("Abonnements", rows.get(1).title);             // later rows keep their own name
+    }
+
+    @Test
+    public void resumeRowSurvivesWithoutChannelRows() {
+        List<TvShelf.Row> watched = Collections.singletonList(
+                new TvShelf.Row("Continue watching", Collections.singletonList(item(1))));
+        List<TvShelf.Row> rows = TvShelf.mergeResume(watched, Collections.emptyList(), "For you");
+        assertEquals(1, rows.size());
+        assertEquals("For you", rows.get(0).title);
+        assertEquals(1, rows.get(0).items.size());
+        assertTrue(TvShelf.mergeResume(Collections.emptyList(), Collections.emptyList(), "For you").isEmpty());
+    }
+
+    @Test
+    public void cardsWithoutArtworkAreDropped() {
+        List<TvShelf.Row> rows = Arrays.asList(
+                new TvShelf.Row("For you", Arrays.asList(
+                        new TvShelf.Item(1, "Prompt", null, -1, null, "a"),
+                        new TvShelf.Item(2, "Blank", null, -1, "  ", "b"),
+                        new TvShelf.Item(5, "Banner", null, -1, "android.resource://com.spotify/drawable/banner", "e"),
+                        new TvShelf.Item(3, "Cover", null, -1, "https://i.scdn.co/a", "c"))),
+                new TvShelf.Row("Prompts only", Collections.singletonList(
+                        new TvShelf.Item(4, "Prompt", null, -1, null, "d"))));
+        List<TvShelf.Row> kept = TvShelf.withoutMissingArt(rows);
+        assertEquals(1, kept.size());
+        assertEquals("For you", kept.get(0).title);
+        assertEquals(1, kept.get(0).items.size());
+        assertEquals("Cover", kept.get(0).items.get(0).title);
+    }
+
     private static TvShelf.Item item(long id) {
         return new TvShelf.Item(id, "Title " + id, null, -1, null, null);
+    }
+
+    private static TvShelf.Item play(long id, String title, int progress, String videoId) {
+        return new TvShelf.Item(id, title, null, progress, "https://i.ytimg.com/" + videoId + ".jpg",
+                "https://www.youtube.com/watch?v=" + videoId);
     }
 }

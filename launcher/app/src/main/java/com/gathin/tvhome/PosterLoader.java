@@ -21,10 +21,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Posters for the Stremio shelf. Stremio publishes https:// URLs (its metadata providers), so the
- * launcher downloads them itself: one background thread, an 8 MB bitmap cache in memory, and a
- * 40 MB cache on disk so a poster is fetched once and decoded down to what the screen shows.
- * No image library: a TV with 1 GB of RAM does not need one for a poster row.
+ * Artwork for the dock shelves. The apps publish https:// URLs (Stremio's metadata providers,
+ * Spotify's CDN, YouTube's thumbnails), so the launcher downloads them itself: one background
+ * thread, an 8 MB bitmap cache in memory, and a 40 MB cache on disk so an image is fetched once and
+ * decoded down to what the screen shows. No image library: a TV with 1 GB of RAM does not need one
+ * for a row of cards.
  */
 final class PosterLoader {
     private static final int MEM_BYTES = 8 * 1024 * 1024;

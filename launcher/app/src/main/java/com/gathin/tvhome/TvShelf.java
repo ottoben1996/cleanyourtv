@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.media.tv.TvContract;
+import android.net.Uri;
 import android.util.Log;
 
 import java.io.ByteArrayOutputStream;
@@ -20,12 +21,14 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Reads the preview channels Stremio publishes for the Android TV home screen ("Continue Watching",
- * "Library – …") and their programs, so the launcher can show a poster row without any Stremio
- * account, token or API: the app already keeps that data in the TV provider.
+ * Reads the preview channels an app publishes for the Android TV home screen ("Continue Watching",
+ * "Library – …", Spotify's picks, YouTube's recommendations) and their programs, so the launcher can
+ * show a content row without any account, token or API: the app already keeps that data in the TV
+ * provider. {@link #loadWatchNext} reads the other table apps fill for Google TV's "Continue
+ * watching" shelf.
  *
- * Fork-only feature (see docs/stremio-shelf.md): upstream cleanyourtv has no content rows, so this
- * lives here and the launcher hides the row whenever anything is missing — no Stremio installed, no
+ * Fork-only feature (see docs/dock-shelves.md): upstream cleanyourtv has no content rows, so this
+ * lives here and the launcher hides a row whenever anything is missing — no app installed, no
  * <em>READ_TV_LISTINGS</em> permission, channels off, empty lists — instead of showing an empty shelf.
  */
 final class TvShelf {
@@ -34,6 +37,15 @@ final class TvShelf {
     /** Reading other apps' channels needs this. A runtime permission on some TV builds, install-time elsewhere. */
     static final String PERMISSION = "android.permission.READ_TV_LISTINGS";
     static final String DEFAULT_PACKAGE = "com.stremio.one";
+
+    /**
+     * Rewrites an item's deep link before the launcher uses it. A source that should play in a tile's
+     * own app (a YouTube watch URL handed to TizenTube) uses this to turn the publisher's link into
+     * one that app claims; returning null or an empty string keeps the original.
+     */
+    interface Rewrite {
+        String rewrite(String intentUri);
+    }
 
     /** One poster: what the launcher needs to draw it and to open the title. */
     static final class Item {
@@ -93,15 +105,120 @@ final class TvShelf {
      * when the app simply is not there.
      */
     static List<Row> load(Context ctx, String pkg, int maxRows, int maxItems) {
+        return load(ctx, pkg, maxRows, maxItems, null);
+    }
+
+    /** Same, rewriting every item's deep link through {@code rewrite} before it reaches the launcher. */
+    static List<Row> load(Context ctx, String pkg, int maxRows, int maxItems, Rewrite rewrite) {
         try {
             List<Channel> channels = readChannels(ctx.getContentResolver(), pkg);
             if (channels.isEmpty()) return Collections.emptyList();
             sortChannels(channels);
-            return buildRows(channels, readPrograms(ctx.getContentResolver(), channels), maxRows, maxItems);
+            return buildRows(channels, readPrograms(ctx.getContentResolver(), channels, rewrite), maxRows, maxItems);
         } catch (Exception | OutOfMemoryError e) {
             Log.w(TAG, "could not read the TV provider: " + e);
             return Collections.emptyList();
         }
+    }
+
+    /**
+     * The app's watch-next row: what it says its user was watching (Google TV's "Continue watching"
+     * shelf). Same shape as a channel row, so the shelf draws and opens it the same way; empty when
+     * the app publishes nothing there.
+     */
+    static List<Row> loadWatchNext(Context ctx, String pkg, int maxItems, Rewrite rewrite) {
+        if (maxItems <= 0) return Collections.emptyList();
+        List<Item> items = new ArrayList<>();
+        String[] cols = {
+                "_id",
+                "package_name",
+                "title",
+                "poster_art_uri",
+                "intent_uri",
+                "duration_millis",
+                "last_playback_position_millis",
+                "season_number",
+                "episode_number",
+        };
+        // No selection, like the channels table: the provider only allows one on rows this app owns.
+        try (Cursor c = ctx.getContentResolver().query(
+                Uri.parse("content://android.media.tv/watch_next_program"), cols, null, null, null)) {
+            if (c == null) return Collections.emptyList();
+            while (c.moveToNext() && items.size() < maxItems) {
+                if (!pkg.equals(c.getString(1))) continue;
+                String title = c.getString(2);
+                if (title == null || title.trim().isEmpty()) continue;
+                String intent = c.getString(4);
+                Integer season = c.isNull(7) ? null : c.getInt(7);
+                Integer episode = c.isNull(8) ? null : c.getInt(8);
+                long duration = c.isNull(5) ? 0 : c.getLong(5);
+                long position = c.isNull(6) ? 0 : c.getLong(6);
+                items.add(new Item(c.getLong(0), title.trim(), badge(intent, season, episode),
+                        progress(position, duration), c.getString(3), rewrite(rewrite, intent)));
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "could not read watch next: " + e);
+            return Collections.emptyList();
+        }
+        if (items.isEmpty()) return Collections.emptyList();
+        return Collections.singletonList(new Row(ctx.getString(R.string.shelf_resume), items));
+    }
+
+    /** The item's deep link after the rewrite; the original when there is nothing to rewrite. */
+    private static String rewrite(Rewrite rewrite, String intentUri) {
+        if (rewrite == null || intentUri == null) return intentUri;
+        String out = rewrite.rewrite(intentUri);
+        return out == null || out.isEmpty() ? intentUri : out;
+    }
+
+    /**
+     * One rich row out of "what you were watching" and the app's first channel: watched items keep
+     * their progress bars and come first, duplicates (the same link) are dropped, and the row takes a
+     * neutral label ("For you") because it is both. Later rows keep their own names.
+     *
+     * Only one row fits the band on a 1080p TV (see shelfFitRows), so stacking "Continue watching"
+     * above the recommendations would hide the recommendations instead of adding to them.
+     */
+    static List<Row> mergeResume(List<Row> watched, List<Row> rows, String label) {
+        if (watched.isEmpty()) return rows;
+        if (rows.isEmpty()) return Collections.singletonList(new Row(label, watched.get(0).items));
+        List<Item> merged = new ArrayList<>(watched.get(0).items);
+        Set<String> seen = new HashSet<>();
+        for (Item item : merged) seen.add(linkKey(item));
+        for (Item item : rows.get(0).items) {
+            if (seen.add(linkKey(item))) merged.add(item);
+        }
+        List<Row> out = new ArrayList<>();
+        out.add(new Row(label, merged));
+        out.addAll(rows.subList(1, rows.size()));
+        return out;
+    }
+
+    /** What makes two cards the same title: its deep link, or its id when the app published none. */
+    private static String linkKey(Item item) {
+        return item.intentUri == null || item.intentUri.isEmpty() ? "#" + item.id : item.intentUri;
+    }
+
+    /**
+     * Drops cards whose app published no usable artwork (Spotify's first card is a promo banner
+     * shipped as an {@code android.resource://} drawable, not a title): a placeholder letter in a row
+     * of covers reads as a broken image. Rows left empty are dropped as well.
+     */
+    static List<Row> withoutMissingArt(List<Row> rows) {
+        List<Row> out = new ArrayList<>();
+        for (Row row : rows) {
+            List<Item> kept = new ArrayList<>();
+            for (Item item : row.items) {
+                // The artwork rows (Spotify, YouTube) only ever point at https images; anything else
+                // is either a prompt or something the loader cannot decode.
+                if (item.posterUri != null
+                        && (item.posterUri.startsWith("https://") || item.posterUri.startsWith("http://"))) {
+                    kept.add(item);
+                }
+            }
+            if (!kept.isEmpty()) out.add(new Row(row.title, kept));
+        }
+        return out;
     }
 
     private static List<Channel> readChannels(ContentResolver cr, String pkg) {
@@ -126,7 +243,7 @@ final class TvShelf {
         return out;
     }
 
-    private static Map<Long, List<Item>> readPrograms(ContentResolver cr, List<Channel> channels) {
+    private static Map<Long, List<Item>> readPrograms(ContentResolver cr, List<Channel> channels, Rewrite rewrite) {
         Map<Long, List<Item>> out = new HashMap<>();
         Set<Long> wanted = new HashSet<>();
         for (Channel ch : channels) wanted.add(ch.id);
@@ -156,7 +273,7 @@ final class TvShelf {
                 long duration = c.isNull(5) ? 0 : c.getLong(5);
                 long position = c.isNull(6) ? 0 : c.getLong(6);
                 Item item = new Item(c.getLong(0), title.trim(), badge(intent, season, episode),
-                        progress(position, duration), c.getString(3), intent);
+                        progress(position, duration), c.getString(3), rewrite(rewrite, intent));
                 List<Item> list = out.get(channelId);
                 if (list == null) {
                     list = new ArrayList<>();
@@ -229,11 +346,45 @@ final class TvShelf {
         if (intentUri == null || intentUri.isEmpty()) return null;
         try {
             Intent i = Intent.parseUri(intentUri, intentUri.startsWith("intent:") ? Intent.URI_INTENT_SCHEME : 0);
-            if (i.getPackage() == null && i.getComponent() == null) i.setPackage(pkg);
+            if (pkg != null && !pkg.isEmpty() && i.getPackage() == null && i.getComponent() == null) i.setPackage(pkg);
             return i;
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * The https watch URL behind a YouTube item: the publisher wraps it in an intent:// link
+     * ("intent://www.youtube.com/watch?v=…&launch=launcher#Intent;scheme=https;package=…;end"), the
+     * watch-next table stores it as a plain link. TizenTube and similar clients claim youtube.com
+     * URLs, so a rewritten URL is what opens such a video in the app the tile points at. Null when
+     * there is no video id to take (then the original link is used and the publisher handles it).
+     */
+    static String youtubeWatchUrl(String raw) {
+        if (raw == null) return null;
+        String id = null;
+        int shorts = raw.indexOf("youtube.com/shorts/");
+        int watch = raw.indexOf("youtube.com/watch");
+        if (watch >= 0 && raw.indexOf("v=", watch) >= 0) {
+            id = idFrom(raw, raw.indexOf("v=", watch) + 2);
+        } else if (shorts >= 0) {
+            id = idFrom(raw, shorts + "youtube.com/shorts/".length());
+        } else if (raw.contains("youtu.be/")) {
+            id = idFrom(raw, raw.indexOf("youtu.be/") + "youtu.be/".length());
+        }
+        if (id == null || !id.matches("[A-Za-z0-9_-]{6,}")) return null;
+        return "https://www.youtube.com/watch?v=" + id;
+    }
+
+    /** The video id's characters from {@code at} up to the next URL separator ("&", "#", "/", "?"). */
+    private static String idFrom(String raw, int at) {
+        int end = at;
+        while (end < raw.length()) {
+            char ch = raw.charAt(end);
+            if (!Character.isLetterOrDigit(ch) && ch != '_' && ch != '-') break;
+            end++;
+        }
+        return raw.substring(at, end);
     }
 
     /** Decodes %XX (Stremio encodes ':' as %3A in its deep links); plain ASCII, no deprecation traps. */

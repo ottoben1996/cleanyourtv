@@ -14,9 +14,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Needed on Android 10 to read the Wi-Fi network name; granted over adb at install time. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <!-- Stremio shelf (stremio_shelf in config.xml, docs/stremio-shelf.md): read the Android TV channels
-         the app publishes. Install-time on most builds; on builds that make it a runtime permission
-         (Skyworth Strong LEAP-S1 with Android 14) Home asks once, and refusing only hides the shelf. -->
+    <!-- Dock shelves (stremio_shelf in config.xml, docs/dock-shelves.md): read the Android TV channels
+         the dock apps publish (Stremio's rows, Spotify's covers, YouTube's rows through the YouTube app).
+         Install-time on most builds; on builds that make it a runtime permission (Skyworth Strong
+         LEAP-S1 with Android 14) Home asks once, and refusing only hides the shelves. -->
     <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
 
     <!-- Android 11+ package visibility: lets the launcher list the TV apps it shows as tiles, and the

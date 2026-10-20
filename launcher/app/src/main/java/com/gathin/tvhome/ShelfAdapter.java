@@ -1,6 +1,7 @@
 package com.gathin.tvhome;
 
 import android.graphics.Color;
+import android.util.TypedValue;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -18,8 +19,8 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.List;
 
 /**
- * One poster row of the Stremio shelf. Items behave like the app tiles: they scale up a little when
- * focused (no spring, no glass — the row is secondary), and clicking one follows Stremio's deep link.
+ * One card row of a dock shelf. Cards behave like the app tiles: they scale up a little when
+ * focused (no spring, no glass — a row is secondary), and clicking one follows its deep link.
  */
 final class ShelfAdapter extends RecyclerView.Adapter<ShelfAdapter.Holder> {
 
@@ -28,30 +29,32 @@ final class ShelfAdapter extends RecyclerView.Adapter<ShelfAdapter.Holder> {
 
         void onItemClicked(TvShelf.Item item);
 
-        /** A D-pad key on a focused poster; return true when the shelf handled it. */
+        /** A D-pad key on a focused card; return true when the shelf handled it. */
         boolean onItemKey(int position, int keyCode);
     }
-
-    /** Design width/height of a poster card in dp (sized to fit the band above the dock on a 1080p TV). */
-    static final int CARD_W_DP = 96, CARD_H_DP = 144;
 
     private final List<TvShelf.Item> items;
     private final PosterLoader posters;       // null when poster downloads are off
     private final boolean reducedMotion;
     private final Listener listener;
+    private final int cardWidthPx;
+    private final int cardHeightPx;
     private final int posterWidthPx;
     private final int posterHeightPx;
     private final int cornerRadiusPx;
 
     ShelfAdapter(List<TvShelf.Item> items, PosterLoader posters, boolean reducedMotion, int cornerRadiusPx,
-                 int posterWidthPx, int posterHeightPx, Listener listener) {
+                 int cardWidthPx, int cardHeightPx, Listener listener) {
         this.items = items;
         this.posters = posters;
         this.reducedMotion = reducedMotion;
         this.listener = listener;
         this.cornerRadiusPx = cornerRadiusPx;
-        this.posterWidthPx = posterWidthPx;
-        this.posterHeightPx = posterHeightPx;
+        this.cardWidthPx = cardWidthPx;
+        this.cardHeightPx = cardHeightPx;
+        // Posters decode a little larger than the card so the focus zoom stays sharp.
+        this.posterWidthPx = Math.round(cardWidthPx * 1.1f);
+        this.posterHeightPx = Math.round(cardHeightPx * 1.1f);
     }
 
     @NonNull
@@ -59,6 +62,16 @@ final class ShelfAdapter extends RecyclerView.Adapter<ShelfAdapter.Holder> {
     public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         Holder holder = new Holder(LayoutInflater.from(parent.getContext())
                 .inflate(R.layout.item_shelf, parent, false));
+        // The layout carries one design (a 96×144 dp Stremio poster); a source with other artwork
+        // (a square Spotify cover, a 16:9 YouTube thumbnail) resizes the card and the title here.
+        ViewGroup.LayoutParams cardLp = holder.card.getLayoutParams();
+        cardLp.width = cardWidthPx;
+        cardLp.height = cardHeightPx;
+        holder.card.setLayoutParams(cardLp);
+        ViewGroup.LayoutParams titleLp = holder.title.getLayoutParams();
+        titleLp.width = cardWidthPx;
+        holder.title.setLayoutParams(titleLp);
+        holder.letter.setTextSize(TypedValue.COMPLEX_UNIT_PX, Math.min(cardWidthPx, cardHeightPx) * 0.28f);
         holder.card.setOutlineProvider(new ViewOutlineProvider() {
             @Override
             public void getOutline(View view, android.graphics.Outline outline) {
