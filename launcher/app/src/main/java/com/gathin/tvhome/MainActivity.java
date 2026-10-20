@@ -65,6 +65,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.io.File;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
@@ -108,6 +109,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private ProgressBar nowPlayingProgress;
     private boolean nowPlayingShown;
     private String nowPlayingKey = "";
+    /** Football row (football_* in config.xml, docs/football.md): tonight's matches and live scores. */
+    private boolean footballOn;
+    private String footballToken, footballCompetitions, footballTeams, footballChannels, footballTile;
+    private List<FootBall.Match> footMatches = new ArrayList<>();
+    private boolean footLoading;
+    private boolean footballTickOn;
+    private volatile long footFetchedAt;
+    private static final long FOOTBALL_TICK_MS = 60_000L;
     private TextView greeting;
     private View btnInputs;
     private TextView btnWifi;
@@ -289,6 +298,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         nowPlayingArtist = findViewById(R.id.npArtist);
         nowPlayingProgress = findViewById(R.id.npProgress);
         nowPlaying = new NowPlaying(this, this::onNowPlayingChanged);
+        footballOn = cfg.footballEnabled && !cfg.footballToken.isEmpty() && !cfg.footballTile.isEmpty();
+        footballToken = cfg.footballToken;
+        footballCompetitions = cfg.footballCompetitions;
+        footballTeams = cfg.footballTeams;
+        footballChannels = cfg.footballChannels;
+        footballTile = cfg.footballTile;
         greeting = findViewById(R.id.greeting);
         btnWifi = findViewById(R.id.btnWifi);
         shamsiDate = findViewById(R.id.shamsiDate);
@@ -578,6 +593,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (openPopup != null) openPopup.dismiss();
         nowPlaying.stop();
         stopNowPlayingTick();
+        stopFootballTick();
     }
 
     @Override
@@ -785,6 +801,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         showNowPlaying(playingHere);
         if (shelfHere) shelfActivate(tilePackage);
         else shelfHide();
+        if (footballOn && footballTile.equals(tilePackage)) startFootballTick();
+        else stopFootballTick();
     }
 
     /** Called on the main thread when the playing session, its metadata or its state changes. */
@@ -918,7 +936,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** Re-reads every dock tile's rows off the main thread; cheap enough to run on every resume. */
     private void shelfRefresh() {
-        if (!shelfOn || shelfLoading || !TvShelf.allowed(this)) return;
+        if (!shelfOn || shelfLoading) return;
+        final boolean tvAllowed = TvShelf.allowed(this);
+        if (!tvAllowed && !footballOn) return;
         shelfLoading = true;
         final Context appContext = getApplicationContext();
         final List<String> tiles = new ArrayList<>(dockApps);
@@ -926,24 +946,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         final String stremio = stremioShelfPackage;
         Thread t = new Thread(() -> {
             Map<String, List<TvShelf.Row>> data = new HashMap<>();
-            for (String tile : tiles) {
-                ShelfSource source = ShelfSource.forTile(tile, stremio, opensYouTube(tile),
-                        appContext.getString(R.string.shelf_for_you));
-                if (source == null) continue;
-                List<TvShelf.Row> loaded = TvShelf.load(appContext, source.provider, rows, items, source.rewrite());
-                if (source.artOnly) loaded = TvShelf.withoutMissingArt(loaded);
-                List<TvShelf.Row> all = loaded;
-                if (source.watchNext) {
-                    List<TvShelf.Row> watched = TvShelf.withoutMissingArt(
-                            TvShelf.loadWatchNext(appContext, source.provider, items, source.rewrite()));
-                    // One row, not two: on a 1080p band the second row would be hidden anyway.
-                    all = TvShelf.mergeResume(watched, loaded, appContext.getString(R.string.shelf_for_you));
+            if (tvAllowed) {
+                for (String tile : tiles) {
+                    ShelfSource source = ShelfSource.forTile(tile, stremio, opensYouTube(tile),
+                            appContext.getString(R.string.shelf_for_you));
+                    if (source == null) continue;
+                    List<TvShelf.Row> loaded = TvShelf.load(appContext, source.provider, rows, items, source.rewrite());
+                    if (source.artOnly) loaded = TvShelf.withoutMissingArt(loaded);
+                    List<TvShelf.Row> all = loaded;
+                    if (source.watchNext) {
+                        List<TvShelf.Row> watched = TvShelf.withoutMissingArt(
+                                TvShelf.loadWatchNext(appContext, source.provider, items, source.rewrite()));
+                        // One row, not two: on a 1080p band the second row would be hidden anyway.
+                        all = TvShelf.mergeResume(watched, loaded, appContext.getString(R.string.shelf_for_you));
+                    }
+                    if (!all.isEmpty()) data.put(tile, all);
                 }
-                if (!all.isEmpty()) data.put(tile, all);
             }
+            List<FootBall.Match> foot = footballOn ? footballLoad() : null;
             handler.post(() -> {
                 shelfLoading = false;
                 if (isFinishing()) return;
+                if (foot != null) footMatches = foot;
                 shelfRows.clear();
                 shelfRows.putAll(data);
                 shelfPopulate();
@@ -951,6 +975,90 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }, "shelf-read");
         t.setPriority(Thread.NORM_PRIORITY - 1);
         t.start();
+    }
+
+    /**
+     * Tonight's matches, fetched on a worker thread. Null means "nothing new" — a request less than a
+     * minute ago, or a failure — and keeps the previous list; an empty list is a successful "no match".
+     */
+    private List<FootBall.Match> footballLoad() {
+        long now = System.currentTimeMillis();
+        if (now - footFetchedAt < 60_000L) return null;
+        LocalDate today = LocalDate.now();
+        List<FootBall.Match> fetched = FootBall.fetch(footballToken, footballCompetitions,
+                today.toString(), today.plusDays(1).toString(), footballChannels, footballTeams);
+        if (fetched == null) return null;
+        footFetchedAt = now;
+        return FootBall.select(fetched, now, shelfMaxItems);
+    }
+
+    /** The live tick: refetches the scores and rebuilds the row when the owner is not browsing it. */
+    private void footballRefresh() {
+        if (!footballOn || footLoading) return;
+        footLoading = true;
+        Thread t = new Thread(() -> {
+            List<FootBall.Match> fetched = footballLoad();
+            handler.post(() -> {
+                footLoading = false;
+                if (fetched == null || isFinishing()) return;
+                footMatches = fetched;
+                if (!shelfBox.hasFocus()) {
+                    shelfPopulate();
+                } else if (grid.hasFocus() && lastFocused < COLUMNS) {
+                    showDockBand(lastFocused);
+                }
+            });
+        }, "football-live");
+        t.setPriority(Thread.NORM_PRIORITY - 1);
+        t.start();
+    }
+
+    private final Runnable footballTick = new Runnable() {
+        @Override
+        public void run() {
+            footballTickOn = false;
+            if (!footballOn) return;
+            footballRefresh();
+            if (isFootballTileFocused()) startFootballTick();
+        }
+    };
+
+    private boolean isFootballTileFocused() {
+        return footballOn && grid.hasFocus() && lastFocused < COLUMNS
+                && footballTile.equals(adapter.packageAt(lastFocused));
+    }
+
+    private void startFootballTick() {
+        if (footballTickOn || !footballOn) return;
+        footballTickOn = true;
+        handler.postDelayed(footballTick, FOOTBALL_TICK_MS);
+    }
+
+    private void stopFootballTick() {
+        if (!footballTickOn) return;
+        footballTickOn = false;
+        handler.removeCallbacks(footballTick);
+    }
+
+    /** Tonight's data exists and the tile is in the dock; the group itself may not be built yet. */
+    private boolean hasFootballData() {
+        return footballOn && !footMatches.isEmpty() && dockApps.contains(footballTile);
+    }
+
+    /** Whether the football tile's group is actually built (so the band can hand it over). */
+    private boolean hasFootball() {
+        return hasFootballData() && shelfGroups.containsKey(footballTile);
+    }
+
+    /** Opens the football app: the only thing a match card can do, the channels are inside it. */
+    private void openFootballTile() {
+        Intent i = getPackageManager().getLeanbackLaunchIntentForPackage(footballTile);
+        if (i == null) i = getPackageManager().getLaunchIntentForPackage(footballTile);
+        if (i == null) {
+            Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        open(i);
     }
 
     /** The row source for a dock tile, or null when it has none. Cached: every dock move asks. */
@@ -975,8 +1083,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** Whether this dock tile has rows to show (built by the last refresh). */
     private boolean hasShelf(String tilePackage) {
-        List<TvShelf.Row> rows = tilePackage == null ? null : shelfRows.get(tilePackage);
-        return rows != null && !rows.isEmpty() && shelfGroups.containsKey(tilePackage);
+        if (tilePackage == null) return false;
+        List<TvShelf.Row> rows = shelfRows.get(tilePackage);
+        if (rows != null && !rows.isEmpty() && shelfGroups.containsKey(tilePackage)) return true;
+        return tilePackage.equals(footballTile) && hasFootball();
     }
 
     /** Builds one hidden group of rows per tile that has data, then hands the band to the focused tile. */
@@ -986,7 +1096,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         shelfGroupRows.clear();
         shelfRecyclers = new ArrayList<>();
         shelfTilePackage = null;
-        if (!shelfOn || shelfRows.isEmpty()) {
+        if (!shelfOn || (shelfRows.isEmpty() && !hasFootballData())) {
             shelfHide();
             return;
         }
@@ -1031,8 +1141,43 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             shelfGroups.put(entry.getKey(), group);
             shelfGroupRows.put(entry.getKey(), recyclers);
         }
+        // The football row is not a TV channel: it is built from tonight's matches (docs/football.md).
+        if (hasFootballData() && !shelfGroups.containsKey(footballTile)) {
+            LinearLayout group = new LinearLayout(this);
+            group.setOrientation(LinearLayout.VERTICAL);
+            group.setVisibility(View.GONE);
+            View rowView = getLayoutInflater().inflate(R.layout.shelf_row, group, false);
+            ((TextView) rowView.findViewById(R.id.shelfLabel)).setText(R.string.football_row);
+            RecyclerView rv = rowView.findViewById(R.id.shelfRow);
+            rv.setLayoutManager(new LinearLayoutManager(this, RecyclerView.HORIZONTAL, false));
+            rv.setItemAnimator(null);
+            rv.setAdapter(new FootAdapter(footMatches, reducedMotion, Math.round(16 * density),
+                    Math.round(300 * density), Math.round(124 * density), new FootAdapter.Listener() {
+                        @Override
+                        public void onItemFocused(int position) {
+                            shelfFocusedCol = position;
+                        }
+
+                        @Override
+                        public void onItemClicked(FootBall.Match match) {
+                            openFootballTile();
+                        }
+
+                        @Override
+                        public boolean onItemKey(int position, int keyCode) {
+                            return shelfItemKey(0, position, keyCode);
+                        }
+                    }));
+            group.addView(rowView);
+            shelfBox.addView(group, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            shelfGroups.put(footballTile, group);
+            List<RecyclerView> recyclers = new ArrayList<>();
+            recyclers.add(rv);
+            shelfGroupRows.put(footballTile, recyclers);
+        }
         String focused = grid.hasFocus() && lastFocused < COLUMNS ? adapter.packageAt(lastFocused) : null;
-        if (focused != null && (hasShelf(focused) || nowPlayingOn)) {
+        if (focused != null) {
             // Re-run the whole band rule: the rows may have changed which one belongs on top.
             showDockBand(lastFocused);
         } else {

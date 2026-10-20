@@ -119,4 +119,18 @@
          with its artwork and the glow's colour taken from it. Needs the one-time notification-access
          grant; without it the card is simply absent, the app name stays. false turns it off for good. -->
     <bool name="now_playing">true</bool>
+
+    <!-- Football row (fork feature, docs/football.md): today's matches from football-data.org on one
+         dock tile, with live scores. Needs a free token (football-data.org/client/register); without
+         one the row stays hidden. The token can also live in football-token.txt in the theme folder,
+         so a config.json that gets shared never carries it. Competitions are API codes; a team rule
+         keeps only the listed clubs inside a competition (here Real Madrid and Barcelona in La Liga,
+         while every Ligue 1, Champions League and Premier League match is shown). Channels are shown
+         on the cards; picking a match opens the football app, which is where the streams live. -->
+    <bool name="football">true</bool>
+    <string name="football_token" translatable="false"></string>
+    <string name="football_competitions" translatable="false">FL1,CL,PL,PD</string>
+    <string name="football_teams" translatable="false">PD:Real Madrid,FC Barcelona</string>
+    <string name="football_channels" translatable="false">FL1=Canal+|CL=beIN Sports 1|PL=Canal+|PD=beIN Sports 1</string>
+    <string name="football_tile" translatable="false">com.new_Golden_ott_user.app</string>
 </resources>

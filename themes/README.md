@@ -45,6 +45,12 @@ is ignored, and a file that doesn't parse is ignored as a whole, so a theme can 
 | `weather_refresh_minutes` | 15 to 720 | How long a weather reading stays fresh before another request (default 30) |
 | `stremio_shelf` | bool | Show the dock shelves: content rows above the dock, read from the channels the dock apps publish to the TV (fork feature, `true` by default; Stremio, Spotify and YouTube-through-TizenTube — see `docs/dock-shelves.md`) |
 | `now_playing` | bool | Show the band's now-playing card (cover, title, artist, progress) and tint the glow with the cover's colour (fork feature, `true` by default; one-time notification-access grant — see `docs/now-playing.md`) |
+| `football` | bool | Show the football row on one dock tile: tonight's matches, live scores and channels (fork feature, `true` by default; needs a free football-data.org token — see `docs/football.md`) |
+| `football_token` | string | football-data.org token; empty reads `football-token.txt` from the theme folder, so a shared `config.json` never carries it |
+| `football_competitions` | string | API codes to follow (default `FL1,CL,PL,PD`) |
+| `football_teams` | string | Club rule inside a competition, `PD:Real Madrid,FC Barcelona` (default) |
+| `football_channels` | string | Channel shown on the cards, `FL1=Canal+\|CL=beIN Sports 1\|…` (display only) |
+| `football_tile` | string | Dock tile that carries the row (default `com.new_Golden_ott_user.app`) |
 | `stremio_shelf_posters` | bool | Download posters (`true`, default) instead of coloured placeholders |
 | `stremio_shelf_rows` | 1 to 3 | How many channel rows to show (default 1, "Continuer de regarder" only; rows that would cover the clock are dropped — one row fits a 1080p TV, two a 720p one) |
 | `stremio_shelf_max_items` | 1 to 20 | Most posters per row (default 12) |

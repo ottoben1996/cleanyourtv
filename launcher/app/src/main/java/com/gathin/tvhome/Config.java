@@ -74,6 +74,14 @@ final class Config {
     final String stremioShelfPackage;
     /** Now playing: show the current track and tint the glow (config.xml, now_playing). */
     final boolean nowPlaying;
+    /** Football row: whether it is wanted, and the free football-data.org token (football_*). */
+    final boolean footballEnabled;
+    final String footballToken;
+    /** API competition codes, the team rules, the channels and the tile that shows the row. */
+    final String footballCompetitions;
+    final String footballTeams;
+    final String footballChannels;
+    final String footballTile;
     /** Full-screen picture behind the launcher, or null for the plain colour. */
     final File wallpaper;
     /** Whether the overlay file was present and parsed. */
@@ -88,6 +96,8 @@ final class Config {
                    String weatherPlace, String weatherUnits, int weatherRefreshMinutes,
                    boolean stremioShelf, boolean stremioShelfPosters, int stremioShelfRows,
                    int stremioShelfMaxItems, String stremioShelfPackage, boolean nowPlaying,
+                   boolean footballEnabled, String footballToken, String footballCompetitions,
+                   String footballTeams, String footballChannels, String footballTile,
                    File wallpaper, boolean overlayApplied) {
         this.dockApps = Collections.unmodifiableList(dockApps);
         this.hiddenApps = Collections.unmodifiableList(hiddenApps);
@@ -117,6 +127,12 @@ final class Config {
         this.stremioShelfMaxItems = stremioShelfMaxItems;
         this.stremioShelfPackage = stremioShelfPackage;
         this.nowPlaying = nowPlaying;
+        this.footballEnabled = footballEnabled;
+        this.footballToken = footballToken;
+        this.footballCompetitions = footballCompetitions;
+        this.footballTeams = footballTeams;
+        this.footballChannels = footballChannels;
+        this.footballTile = footballTile;
         this.wallpaper = wallpaper;
         this.overlayApplied = overlayApplied;
     }
@@ -156,6 +172,12 @@ final class Config {
         int shelfItems = res.getInteger(R.integer.stremio_shelf_max_items);
         String shelfPackage = res.getString(R.string.stremio_shelf_package).trim();
         boolean nowPlaying = res.getBoolean(R.bool.now_playing);
+        boolean football = res.getBoolean(R.bool.football);
+        String footballToken = res.getString(R.string.football_token).trim();
+        String footballCompetitions = res.getString(R.string.football_competitions).trim();
+        String footballTeams = res.getString(R.string.football_teams).trim();
+        String footballChannels = res.getString(R.string.football_channels).trim();
+        String footballTile = res.getString(R.string.football_tile).trim();
         boolean applied = false;
 
         File dir = dir(ctx);
@@ -191,6 +213,12 @@ final class Config {
             shelfItems = integer(json, "stremio_shelf_max_items", shelfItems, 1, 20);
             shelfPackage = string(json, "stremio_shelf_package", shelfPackage);
             nowPlaying = bool(json, "now_playing", nowPlaying);
+            football = bool(json, "football", football);
+            footballToken = string(json, "football_token", footballToken);
+            footballCompetitions = string(json, "football_competitions", footballCompetitions);
+            footballTeams = string(json, "football_teams", footballTeams);
+            footballChannels = string(json, "football_channels", footballChannels);
+            footballTile = string(json, "football_tile", footballTile);
         }
         // A coordinate outside its range is ignored, keeping the weather line hidden rather than wrong.
         if (weatherLat != null && !Weather.validLatitude(weatherLat)) weatherLat = null;
@@ -201,6 +229,10 @@ final class Config {
         if (json != null && json.has("wallpaper") && !bool(json, "wallpaper", true)) wallpaper = null;
         // An empty package would silently disable the shelf; fall back to Stremio's.
         if (shelfPackage.isEmpty()) shelfPackage = TvShelf.DEFAULT_PACKAGE;
+        // The token can stay out of the theme so a shared config.json never carries it.
+        if (footballToken.isEmpty() && dir != null) {
+            footballToken = firstLine(new File(dir, "football-token.txt"));
+        }
 
         return new Config(dock, hidden, liveTv, liveTvAction, panelService, panelAction, inputAction,
                 Math.max(1, columns), Math.max(0, rowsBelow), shamsi, moduleCards, reducedMotion,
@@ -208,7 +240,25 @@ final class Config {
                 Math.max(0, Math.min(100, skyIntensity)), weatherEnabled, weatherLat, weatherLon,
                 weatherPlace, weatherUnits, weatherRefresh,
                 shelf, shelfPosters, Math.max(1, Math.min(3, shelfRows)), Math.max(1, Math.min(20, shelfItems)),
-                shelfPackage, nowPlaying, wallpaper, applied);
+                shelfPackage, nowPlaying,
+                football, footballToken, footballCompetitions, footballTeams, footballChannels, footballTile,
+                wallpaper, applied);
+    }
+
+    /** First line of a small text file, trimmed; empty when it cannot be read. */
+    private static String firstLine(File file) {
+        if (file == null || !file.isFile() || file.length() > 4096) return "";
+        try (InputStream in = new FileInputStream(file)) {
+            byte[] buf = new byte[(int) file.length()];
+            int n = 0, r;
+            while (n < buf.length && (r = in.read(buf, n, buf.length - n)) > 0) n += r;
+            String text = new String(buf, 0, n, StandardCharsets.UTF_8);
+            int line = text.indexOf('\n');
+            String first = (line >= 0 ? text.substring(0, line) : text).trim();
+            return first.startsWith("\uFEFF") ? first.substring(1).trim() : first;
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     /** A coordinate from config.xml: blank or unparsable means "not set". */

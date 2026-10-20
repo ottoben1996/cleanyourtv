@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Focus ring on a match card, drawn as the card's foreground so it sits over the text. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#00000000" />
+    <stroke android:width="2dp" android:color="#E6FFFFFF" />
+    <corners android:radius="16dp" />
+</shape>

@@ -23,6 +23,20 @@
     <string name="shelf_for_you">For you</string>
     <string name="now_playing_permission">Now playing: allow Home in notification access to show the current track</string>
     <string name="now_playing_note" translatable="false">♪</string>
+    <string name="football_row">Tonight\'s football</string>
+    <string name="football_minute">%1$d\'</string>
+    <string name="football_live">Live</string>
+    <string name="football_half_time">Half-time</string>
+    <string name="football_finished">Full time</string>
+    <string name="football_postponed">Postponed</string>
+    <string name="football_suspended">Suspended</string>
+    <string name="football_cancelled">Cancelled</string>
+    <string name="football_tomorrow">Tomorrow %1$s</string>
+    <string name="competition_fl1">Ligue 1</string>
+    <string name="competition_cl">Champions League</string>
+    <string name="competition_pl">Premier League</string>
+    <string name="competition_pd">La Liga</string>
+    <string name="competition_el">Europa League</string>
     <string name="date_format">EEEE  d MMMM</string>
     <string name="dream_name">Clock</string>
     <string name="vpn">VPN</string>

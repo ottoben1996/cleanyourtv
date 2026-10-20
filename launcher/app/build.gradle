@@ -10,8 +10,8 @@ android {
         applicationId 'com.gathin.tvhome'
         minSdk 26
         targetSdk 34
-        versionCode 9
-        versionName '2.8-nowplaying'
+        versionCode 10
+        versionName '2.9-football'
     }
 
     buildTypes {
@@ -36,4 +36,6 @@ dependencies {
     implementation 'androidx.dynamicanimation:dynamicanimation:1.0.0'
     // Test only (never in the APK): plain JVM tests for the module card validators, src/test.
     testImplementation 'junit:junit:4.13.2'
+    // The real org.json instead of the android.jar stub, so the football parser runs on the JVM.
+    testImplementation 'org.json:json:20240303'
 }
