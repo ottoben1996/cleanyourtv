@@ -64,6 +64,16 @@
             </intent-filter>
         </activity>
 
+        <!-- Frame mode (frame in config.xml, docs/frame.md): the art wall, opened by the pill next to
+             Wi-Fi or after a quiet spell on the home. Not exported: only the launcher starts it. -->
+        <activity
+            android:name=".FrameActivity"
+            android:label="@string/frame_mode"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|uiMode"
+            android:screenOrientation="landscape" />
+
         <activity
             android:name=".HomeSettingsActivity"
             android:exported="false"

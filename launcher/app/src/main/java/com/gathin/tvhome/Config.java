@@ -82,6 +82,11 @@ final class Config {
     final String footballTeams;
     final String footballChannels;
     final String footballTile;
+    /** Frame mode: the idle delay, the night dimming and the clock (config.xml, frame_*). */
+    final boolean frameEnabled;
+    final int frameIdleMinutes;
+    final boolean frameNight;
+    final boolean frameClock;
     /** Full-screen picture behind the launcher, or null for the plain colour. */
     final File wallpaper;
     /** Whether the overlay file was present and parsed. */
@@ -98,6 +103,7 @@ final class Config {
                    int stremioShelfMaxItems, String stremioShelfPackage, boolean nowPlaying,
                    boolean footballEnabled, String footballToken, String footballCompetitions,
                    String footballTeams, String footballChannels, String footballTile,
+                   boolean frameEnabled, int frameIdleMinutes, boolean frameNight, boolean frameClock,
                    File wallpaper, boolean overlayApplied) {
         this.dockApps = Collections.unmodifiableList(dockApps);
         this.hiddenApps = Collections.unmodifiableList(hiddenApps);
@@ -133,6 +139,10 @@ final class Config {
         this.footballTeams = footballTeams;
         this.footballChannels = footballChannels;
         this.footballTile = footballTile;
+        this.frameEnabled = frameEnabled;
+        this.frameIdleMinutes = frameIdleMinutes;
+        this.frameNight = frameNight;
+        this.frameClock = frameClock;
         this.wallpaper = wallpaper;
         this.overlayApplied = overlayApplied;
     }
@@ -178,6 +188,10 @@ final class Config {
         String footballTeams = res.getString(R.string.football_teams).trim();
         String footballChannels = res.getString(R.string.football_channels).trim();
         String footballTile = res.getString(R.string.football_tile).trim();
+        boolean frame = res.getBoolean(R.bool.frame);
+        int frameIdle = res.getInteger(R.integer.frame_idle_min);
+        boolean frameNight = res.getBoolean(R.bool.frame_night);
+        boolean frameClock = res.getBoolean(R.bool.frame_clock);
         boolean applied = false;
 
         File dir = dir(ctx);
@@ -219,6 +233,10 @@ final class Config {
             footballTeams = string(json, "football_teams", footballTeams);
             footballChannels = string(json, "football_channels", footballChannels);
             footballTile = string(json, "football_tile", footballTile);
+            frame = bool(json, "frame", frame);
+            frameIdle = integer(json, "frame_idle_min", frameIdle, 1, 60);
+            frameNight = bool(json, "frame_night", frameNight);
+            frameClock = bool(json, "frame_clock", frameClock);
         }
         // A coordinate outside its range is ignored, keeping the weather line hidden rather than wrong.
         if (weatherLat != null && !Weather.validLatitude(weatherLat)) weatherLat = null;
@@ -242,6 +260,7 @@ final class Config {
                 shelf, shelfPosters, Math.max(1, Math.min(3, shelfRows)), Math.max(1, Math.min(20, shelfItems)),
                 shelfPackage, nowPlaying,
                 football, footballToken, footballCompetitions, footballTeams, footballChannels, footballTile,
+                frame, Math.max(1, Math.min(60, frameIdle)), frameNight, frameClock,
                 wallpaper, applied);
     }
 

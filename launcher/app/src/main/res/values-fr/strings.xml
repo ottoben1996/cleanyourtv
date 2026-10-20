@@ -48,4 +48,8 @@
     <string name="wx_storm">Orage</string>
     <string name="wx_line">%1$s %2$d° · %3$s</string>
     <string name="wx_line_plain">%2$d° · %3$s</string>
+
+    <!-- Mode Frame (docs/frame.md) : le raccourci de la barre du haut et l'aide affichée sur le tableau. -->
+    <string name="frame_mode">Mode Frame</string>
+    <string name="frame_hint">Gauche/droite : changer · OK : infos · Retour : quitter</string>
 </resources>

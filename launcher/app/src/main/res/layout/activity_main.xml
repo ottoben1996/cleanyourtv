@@ -312,6 +312,13 @@
                     android:nextFocusDown="@+id/grid" />
 
                 <TextView
+                    android:id="@+id/btnFrame"
+                    style="@style/TopButton"
+                    android:text="@string/frame_mode"
+                    android:drawableStart="@drawable/ic_frame"
+                    android:nextFocusDown="@+id/grid" />
+
+                <TextView
                     android:id="@+id/btnSettings"
                     style="@style/TopButton"
                     android:text="@string/settings"

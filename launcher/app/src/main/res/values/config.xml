@@ -133,4 +133,14 @@
     <string name="football_teams" translatable="false">PD:Real Madrid,FC Barcelona</string>
     <string name="football_channels" translatable="false">FL1=Canal+|CL=beIN Sports 1|PL=Canal+|PD=beIN Sports 1</string>
     <string name="football_tile" translatable="false">com.new_Golden_ott_user.app</string>
+
+    <!-- Frame mode (fork feature, docs/frame.md): after frame_idle_min minutes without a key on the
+         home, one of the bundled public-domain paintings fills the screen with a cream passe-partout
+         and a small clock. Any key returns home; the button next to Wi-Fi opens it on demand. The
+         screen is kept awake while home is in front, so the painting actually stays up. frame_night
+         dims it between 22:00 and 08:00, frame_clock is the clock's default (OK toggles it). -->
+    <bool name="frame">true</bool>
+    <integer name="frame_idle_min">5</integer>
+    <bool name="frame_night">true</bool>
+    <bool name="frame_clock">true</bool>
 </resources>

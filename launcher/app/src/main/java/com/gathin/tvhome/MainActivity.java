@@ -42,9 +42,11 @@ import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowManager;
 import android.view.animation.AnimationUtils;
 import android.view.animation.LayoutAnimationController;
 import android.widget.FrameLayout;
@@ -117,6 +119,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean footballTickOn;
     private volatile long footFetchedAt;
     private static final long FOOTBALL_TICK_MS = 60_000L;
+    /** Frame mode (frame_* in config.xml, docs/frame.md): art after a quiet spell, or from the pill. */
+    private boolean frameOn;
+    private int frameIdleMinutes = 5;
+    private TextView btnFrame;
+    private final Runnable frameIdle = new Runnable() {
+        @Override
+        public void run() {
+            if (!frameOn) return;
+            // A prompt or a lost window focus is not a reason to cover the screen with a painting.
+            if (isFinishing() || !hasWindowFocus() || cardPrompt != null) {
+                armFrameIdle();
+                return;
+            }
+            openFrame();
+        }
+    };
     private TextView greeting;
     private View btnInputs;
     private TextView btnWifi;
@@ -304,6 +322,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         footballTeams = cfg.footballTeams;
         footballChannels = cfg.footballChannels;
         footballTile = cfg.footballTile;
+        frameOn = cfg.frameEnabled;
+        frameIdleMinutes = Math.max(1, cfg.frameIdleMinutes);
+        if (frameOn) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         greeting = findViewById(R.id.greeting);
         btnWifi = findViewById(R.id.btnWifi);
         shamsiDate = findViewById(R.id.shamsiDate);
@@ -402,6 +423,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             open(systemIntent(Settings.ACTION_WIFI_SETTINGS));
             return true;
         });
+        btnFrame = findViewById(R.id.btnFrame);
+        btnFrame.setVisibility(frameOn ? View.VISIBLE : View.GONE);
+        btnFrame.setOnClickListener(v -> openFrame());
         btnSettings.setOnClickListener(v -> open(systemIntent(Settings.ACTION_SETTINGS)));
         btnSettings.setOnLongClickListener(v -> {
             if (!moduleCards) return false;   // off: a long press does nothing, as before the feature
@@ -424,15 +448,32 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 focusTile(lastFocused % COLUMNS);
                 return true;
             }
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                // The left end is Inputs, or Wi-Fi on a box without inputs.
-                return v.getId() == R.id.btnInputs
-                        || (v.getId() == R.id.btnWifi && btnInputs.getVisibility() != View.VISIBLE);
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                if (v.getId() == R.id.btnInputs) { btnWifi.requestFocus(); return true; }
+                if (v.getId() == R.id.btnWifi) {
+                    (btnFrame.getVisibility() == View.VISIBLE ? btnFrame : btnSettings).requestFocus();
+                    return true;
+                }
+                if (v.getId() == R.id.btnFrame) { btnSettings.requestFocus(); return true; }
+                return v.getId() == R.id.btnSettings;
             }
-            return keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == R.id.btnSettings;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                if (v.getId() == R.id.btnSettings) {
+                    (btnFrame.getVisibility() == View.VISIBLE ? btnFrame : btnWifi).requestFocus();
+                    return true;
+                }
+                if (v.getId() == R.id.btnFrame) { btnWifi.requestFocus(); return true; }
+                if (v.getId() == R.id.btnWifi) {
+                    if (btnInputs.getVisibility() == View.VISIBLE) btnInputs.requestFocus();
+                    return true;
+                }
+                return v.getId() == R.id.btnInputs;
+            }
+            return false;
         };
         btnInputs.setOnKeyListener(pillKeys);
         btnWifi.setOnKeyListener(pillKeys);
+        btnFrame.setOnKeyListener(pillKeys);
         btnSettings.setOnKeyListener(pillKeys);
 
         // Hide the glass when focus leaves the tiles.
@@ -519,6 +560,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         nowPlayingPermissionCheck();
         if (nowPlayingOn) nowPlaying.start();
         handler.postDelayed(minuteTick, MINUTE_MS);
+        armFrameIdle();
     }
 
     /** Rebuilds the tiles (and the module cards), then puts focus back where it was. */
@@ -594,6 +636,34 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         nowPlaying.stop();
         stopNowPlayingTick();
         stopFootballTick();
+        handler.removeCallbacks(frameIdle);
+    }
+
+    /** Any key or tap on the home restarts the Frame timer: only a genuinely quiet room gets art. */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN) armFrameIdle();
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) armFrameIdle();
+        return super.dispatchTouchEvent(event);
+    }
+
+    private void armFrameIdle() {
+        handler.removeCallbacks(frameIdle);
+        if (frameOn && !isFinishing()) {
+            handler.postDelayed(frameIdle, frameIdleMinutes * 60_000L);
+        }
+    }
+
+    private void openFrame() {
+        if (!frameOn || isFinishing()) return;
+        handler.removeCallbacks(frameIdle);
+        startActivity(new Intent(this, FrameActivity.class));
+        overridePendingTransition(android.R.anim.fade_in, 0);
     }
 
     @Override
